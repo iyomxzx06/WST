@@ -3,18 +3,31 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#101820">
+  <meta name="theme-color" content="#211b17">
   <title>Havens Restaurant System</title>
   <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./theme.css">
   <script src="../supabase-config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
-  <main id="loginScreen" class="login-wrap">
+  <main id="loginScreen" class="login-wrap login-layout">
+    <section class="login-story" aria-labelledby="loginStoryTitle">
+      <div class="login-story-brand"><span class="brand-mark">HB</span><span>HAVENS BURGER<small>Restaurant operations</small></span></div>
+      <div class="login-story-copy">
+        <p class="story-kicker"><span></span> GOOD FOOD. SMARTER SERVICE.</p>
+        <h2 id="loginStoryTitle">Run your<br>restaurant <em>beautifully.</em></h2>
+        <p>From the first order to the last stock count, keep your team and your day moving.</p>
+      </div>
+      <div class="login-hero-image">
+        <img src="./images/havens-singles-menu.png" alt="Havens Burger Station singles menu poster" fetchpriority="high">
+      </div>
+      <div class="login-story-foot"><span>POINT OF SALE</span><span>·</span><span>INVENTORY</span><span>·</span><span>KITCHEN</span></div>
+    </section>
     <section class="login-card">
       <div class="brand-mark">HB</div>
       <p class="eyebrow">HAVENS BURGER</p>
-      <h1>Restaurant system</h1>
+      <h1>Welcome back</h1>
       <p class="muted">Sign in with your staff account.</p>
       <form id="loginForm">
         <label for="email">Staff email</label>
@@ -67,23 +80,25 @@
   </main>
 
   <div id="appScreen" class="app hidden">
-    <aside id="sidebar" class="sidebar">
+    <a class="skip-to-content" href="#pageContent">Skip to main content</a>
+    <div id="sidebarBackdrop" class="sidebar-backdrop" aria-hidden="true"></div>
+    <aside id="sidebar" class="sidebar" aria-label="Restaurant system sidebar">
       <div class="side-brand"><span class="brand-mark small-mark">HB</span><div><b>Havens</b><small>Restaurant system</small></div></div>
       <div id="branchLabel" class="branch-label"></div>
       <nav id="mainNav" class="main-nav" aria-label="Main navigation"></nav>
       <div class="side-bottom">
         <div id="staffLabel" class="staff-label"></div>
-        <button id="signOutButton" class="secondary wide" type="button">Sign out</button>
+        <button id="signOutButton" class="secondary wide sign-out-button" type="button"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M10 5H5.75A1.75 1.75 0 0 0 4 6.75v10.5A1.75 1.75 0 0 0 5.75 19H10m4-3 4-4-4-4m4 4H9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Sign out</span></button>
       </div>
     </aside>
     <section class="workspace">
       <header class="topbar">
-        <button id="menuToggle" class="icon-button" type="button" aria-label="Open menu">☰</button>
+        <button id="menuToggle" class="icon-button" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="sidebar">☰</button>
         <div><p class="eyebrow">HAVENS BURGER</p><h1 id="pageTitle">Overview</h1></div>
         <span id="roleBadge" class="role-badge"></span>
       </header>
-      <div id="appMessage" class="app-message hidden" role="status"></div>
-      <main id="pageContent" class="page-content"></main>
+      <div id="appMessage" class="app-message hidden" role="alert" aria-live="assertive"></div>
+      <main id="pageContent" class="page-content" aria-live="polite" aria-busy="false" tabindex="-1"></main>
     </section>
   </div>
 

@@ -2,7 +2,6 @@ const ALLOWED_ROLES = new Set([
   "manager",
   "cashier",
   "kitchen",
-  "inventory",
 ]);
 
 function send(res, status, body) {

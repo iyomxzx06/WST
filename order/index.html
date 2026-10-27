@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#211b17">
+  <meta name="description" content="Order Havens Burger online for pickup or delivery.">
+  <title>Order online · Havens Burger</title>
+  <link rel="stylesheet" href="./order.css">
+  <script src="../supabase-config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <header class="store-header">
+    <a class="store-brand" href="./" aria-label="Havens Burger online ordering home">
+      <span class="brand-mark">HB</span>
+      <span><b>HAVENS BURGER</b><small id="branchName">Freshly made, just for you</small></span>
+    </a>
+    <a class="staff-link" href="../restaurant-system/">Staff sign in <span aria-hidden="true">↗</span></a>
+  </header>
+
+  <main id="storefront" class="store-main">
+    <section class="store-hero">
+      <div class="store-hero-copy">
+        <p class="story-kicker"><span></span> GOOD FOOD. SMARTER SERVICE.</p>
+        <h1>Your burger<br>moment starts <em>here.</em></h1>
+        <p>Pick your favorite, add a little extra, and choose pickup or delivery.</p>
+        <a class="hero-cta" href="#menu">Explore the menu <span aria-hidden="true">↓</span></a>
+      </div>
+      <img class="store-hero-poster" src="../restaurant-system/images/havens-singles-menu.png" alt="Havens Burger Station singles menu poster">
+    </section>
+
+    <section id="menu" class="menu-section">
+      <div class="section-title">
+        <div><p class="eyebrow">MADE FRESH AT HAVENS</p><h2>Find your new favorite.</h2><p>Burgers and extras, made to order.</p></div>
+        <span class="menu-count" id="menuCount">Loading menu…</span>
+      </div>
+      <div id="storeMessage" class="store-message hidden" role="alert"></div>
+      <div id="menuGrid" class="menu-grid" aria-live="polite">
+        <div class="menu-loading"><span class="loading-spinner" aria-hidden="true"></span><span>Getting the grill ready…</span></div>
+      </div>
+    </section>
+
+    <section class="order-layout">
+      <section class="checkout-panel">
+        <div class="section-title compact-title"><div><p class="eyebrow">YOUR ORDER</p><h2>Almost delicious.</h2><p>We’ll confirm your order before preparing it.</p></div><span class="cart-count" id="cartCount">0</span></div>
+        <div id="cartItems" class="cart-items"><div class="cart-empty"><span aria-hidden="true">＋</span><b>Your basket is waiting.</b><small>Add a burger or an extra from the menu.</small></div></div>
+        <div class="cart-totals">
+          <div><span>Subtotal</span><b id="subtotal">₱0.00</b></div>
+          <div id="deliveryTotalRow" class="hidden"><span>Flat delivery fee</span><b>₱30.00</b></div>
+          <div class="grand-total"><span>Total</span><b id="orderTotal">₱0.00</b></div>
+        </div>
+
+        <form id="orderForm" class="order-form">
+          <div class="form-section-title"><span>01</span><div><b>Your details</b><small>We’ll call or text to confirm.</small></div></div>
+          <label for="customerName">Full name</label>
+          <input id="customerName" name="customer_name" maxlength="120" autocomplete="name" placeholder="e.g. Alex Santos" required>
+          <label for="customerPhone">Mobile number</label>
+          <input id="customerPhone" name="customer_phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="25" placeholder="e.g. 09XX XXX XXXX" required>
+
+          <fieldset>
+            <legend><span class="form-step">02</span> How would you like it?</legend>
+            <div class="choice-grid">
+              <label class="choice-card"><input type="radio" name="fulfillment_type" value="pickup" checked><span class="choice-icon" aria-hidden="true">↗</span><span><b>Pickup</b><small>Collect at the store</small></span></label>
+              <label class="choice-card"><input type="radio" name="fulfillment_type" value="delivery"><span class="choice-icon" aria-hidden="true">⌖</span><span><b>Delivery</b><small>Flat ₱30 fee</small></span></label>
+            </div>
+          </fieldset>
+          <div id="deliveryFields" class="delivery-fields hidden">
+            <label for="deliveryAddress">Complete delivery address</label>
+            <textarea id="deliveryAddress" name="delivery_address" maxlength="400" autocomplete="street-address" placeholder="House/unit, street, barangay, city"></textarea>
+            <label for="deliveryLandmark">Landmark <span class="optional">(optional)</span></label>
+            <input id="deliveryLandmark" name="delivery_landmark" maxlength="150" placeholder="Nearby landmark">
+            <p class="service-area-note"><span aria-hidden="true">i</span> Delivery is subject to staff confirming that your address is within our service area.</p>
+          </div>
+
+          <fieldset>
+            <legend><span class="form-step">03</span> Payment preference</legend>
+            <div class="choice-grid">
+              <label class="choice-card"><input type="radio" name="payment_method" value="cash" checked><span class="choice-icon" aria-hidden="true">₱</span><span><b>Cash</b><small>Pay on fulfillment</small></span></label>
+              <label class="choice-card"><input type="radio" name="payment_method" value="gcash"><span class="choice-icon gcash-icon" aria-hidden="true">G</span><span><b>GCash</b><small>We’ll contact you</small></span></label>
+            </div>
+            <p id="paymentHelp" class="payment-help">Pay cash when you pick up your order.</p>
+          </fieldset>
+
+          <label for="orderNotes">Anything we should know? <span class="optional">(optional)</span></label>
+          <textarea id="orderNotes" name="notes" maxlength="500" placeholder="Allergies or special instructions"></textarea>
+          <button id="submitOrder" class="primary order-submit" type="submit" disabled><span>Send order request</span><span aria-hidden="true">→</span></button>
+          <p class="confirmation-disclaimer">Your order is a request until our team confirms it by phone. No payment is taken online.</p>
+        </form>
+      </section>
+      <aside class="order-aside">
+        <div class="aside-poster"><img src="../restaurant-system/images/havens-singles-menu.png" alt="Havens Burger singles menu"></div>
+        <div class="aside-note"><span>✦</span><div><b>Made with care.</b><small>Every order is prepared fresh after confirmation.</small></div></div>
+        <div class="contact-card"><b>Need a hand?</b><p>Send your order request and we’ll get in touch to confirm the details.</p></div>
+      </aside>
+    </section>
+  </main>
+
+  <main id="confirmationScreen" class="confirmation-screen hidden" tabindex="-1">
+    <section class="confirmation-card">
+      <div id="confirmationIcon" class="confirmation-icon" aria-hidden="true">✓</div>
+      <p class="eyebrow">ORDER REQUEST RECEIVED</p>
+      <h1 id="confirmationTitle">One more step.</h1>
+      <p id="confirmationMessage" class="confirmation-message">Our team will call or text you to confirm your order.</p>
+      <div class="tracking-reference"><small>YOUR ORDER REFERENCE</small><b id="confirmationReference"></b></div>
+      <div id="trackingDetails" class="tracking-details"></div>
+      <div class="tracking-actions">
+        <button id="refreshTracking" class="secondary" type="button">↻ Check order status</button>
+        <button id="copyTrackingLink" class="secondary" type="button">Copy tracking link</button>
+      </div>
+      <p id="trackingNotice" class="tracking-notice">Keep this private tracking link to check your order status. GCash instructions, if selected, will be provided by staff after confirmation.</p>
+      <a class="back-to-menu" href="./">← Back to menu</a>
+    </section>
+  </main>
+
+  <footer class="store-footer"><span>© Havens Burger Station</span><span>Made with care. Served with a smile.</span><a href="../restaurant-system/">Staff sign in</a></footer>
+  <script type="module" src="./order.js"></script>
+</body>
+</html>

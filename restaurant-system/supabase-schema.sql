@@ -19,7 +19,7 @@ create table if not exists public.staff_profiles (
   business_id uuid not null references public.businesses(id) on delete cascade,
   branch_id uuid not null references public.branches(id) on delete restrict,
   display_name text not null check (length(trim(display_name)) between 1 and 120),
-  role text not null check (role in ('owner_admin','manager','cashier','kitchen','inventory')),
+  role text not null check (role in ('owner_admin','manager','cashier','kitchen')),
   active boolean not null default true,
   created_at timestamptz not null default now()
 );
@@ -85,6 +85,34 @@ create table if not exists public.ingredients (
   created_at timestamptz not null default now(),
   unique(branch_id,name)
 );
+
+create or replace function public.list_readonly_inventory()
+returns table (
+  id uuid,
+  name text,
+  unit text,
+  stock_quantity numeric
+)
+language plpgsql
+stable
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_role text := public.current_staff_role();
+  v_branch_id uuid := public.current_branch_id();
+begin
+  if v_branch_id is null or v_role not in ('cashier','kitchen') then
+    raise exception 'You do not have permission to view inventory';
+  end if;
+
+  return query
+    select i.id,i.name,i.unit,i.stock_quantity
+    from public.ingredients i
+    where i.branch_id=v_branch_id and i.active
+    order by i.name;
+end;
+$$;
 
 create table if not exists public.recipes (
   id uuid primary key default gen_random_uuid(),
@@ -384,7 +412,7 @@ returns void language plpgsql security definer set search_path = public, auth
 as $$
 begin
   if public.current_branch_id() is null
-     or public.current_staff_role() not in ('owner_admin','manager','inventory') then
+     or public.current_staff_role() not in ('owner_admin','manager') then
     raise exception 'You do not have permission to adjust inventory';
   end if;
   if p_quantity_change = 0 or p_movement_type not in ('opening','adjustment','waste') then
@@ -407,7 +435,7 @@ declare
   v_branch_id uuid := public.current_branch_id();
   new_ingredient_id uuid;
 begin
-  if v_branch_id is null or public.current_staff_role() not in ('owner_admin','manager','inventory') then
+  if v_branch_id is null or public.current_staff_role() not in ('owner_admin','manager') then
     raise exception 'You do not have permission to add ingredients';
   end if;
   if length(trim(coalesce(p_name,''))) not between 1 and 120
@@ -435,7 +463,7 @@ declare
   item_quantity numeric(14,3);
   item_ingredient_id uuid;
 begin
-  if v_branch_id is null or public.current_staff_role() not in ('owner_admin','manager','inventory') then
+  if v_branch_id is null or public.current_staff_role() not in ('owner_admin','manager') then
     raise exception 'You do not have permission to edit recipes';
   end if;
   if not exists(select 1 from public.products where id=p_product_id and branch_id=v_branch_id and active) then
@@ -473,7 +501,7 @@ declare
   item_quantity numeric(14,3);
   item_cost numeric(12,4);
 begin
-  if v_branch_id is null or public.current_staff_role() not in ('owner_admin','manager','inventory') then
+  if v_branch_id is null or public.current_staff_role() not in ('owner_admin','manager') then
     raise exception 'You do not have permission to create purchase orders';
   end if;
   if not exists(select 1 from public.suppliers where id=p_supplier_id and suppliers.branch_id=v_branch_id) then
@@ -508,7 +536,7 @@ declare
   line record;
 begin
   if public.current_branch_id() is null
-     or public.current_staff_role() not in ('owner_admin','manager','inventory') then
+     or public.current_staff_role() not in ('owner_admin','manager') then
     raise exception 'You do not have permission to receive purchases';
   end if;
   select * into purchase_row from public.purchase_orders
@@ -557,7 +585,10 @@ create policy "managers update branch" on public.branches for update to authenti
 
 drop policy if exists "staff read branch profiles" on public.staff_profiles;
 create policy "staff read branch profiles" on public.staff_profiles for select to authenticated
-  using (branch_id=public.current_branch_id());
+  using (
+    user_id=(select auth.uid())
+    or (branch_id=public.current_branch_id() and public.current_staff_role()='owner_admin')
+  );
 drop policy if exists "admins update staff profiles" on public.staff_profiles;
 create policy "admins update staff profiles" on public.staff_profiles for update to authenticated
   using (branch_id=public.current_branch_id() and public.current_staff_role()='owner_admin')
@@ -567,38 +598,48 @@ drop policy if exists "staff read products" on public.products;
 create policy "staff read products" on public.products for select to authenticated using (branch_id=public.current_branch_id());
 drop policy if exists "managers manage products" on public.products;
 create policy "managers manage products" on public.products for all to authenticated
-  using (branch_id=public.current_branch_id() and public.current_staff_role() in ('owner_admin','manager','inventory'))
-  with check (branch_id=public.current_branch_id() and public.current_staff_role() in ('owner_admin','manager','inventory'));
+  using (branch_id=public.current_branch_id() and public.current_staff_role() in ('owner_admin','manager'))
+  with check (branch_id=public.current_branch_id() and public.current_staff_role() in ('owner_admin','manager'));
 
 drop policy if exists "staff read ingredients" on public.ingredients;
-create policy "staff read ingredients" on public.ingredients for select to authenticated using (branch_id=public.current_branch_id());
+create policy "managers read ingredients" on public.ingredients for select to authenticated
+  using (branch_id=public.current_branch_id() and public.current_staff_role() in ('owner_admin','manager'));
 drop policy if exists "inventory manage ingredients" on public.ingredients;
-create policy "inventory manage ingredients" on public.ingredients for all to authenticated
-  using (branch_id=public.current_branch_id() and public.current_staff_role() in ('owner_admin','manager','inventory'))
-  with check (branch_id=public.current_branch_id() and public.current_staff_role() in ('owner_admin','manager','inventory'));
+create policy "managers manage ingredients" on public.ingredients for all to authenticated
+  using (branch_id=public.current_branch_id() and public.current_staff_role() in ('owner_admin','manager'))
+  with check (branch_id=public.current_branch_id() and public.current_staff_role() in ('owner_admin','manager'));
 
 drop policy if exists "staff read recipes" on public.recipes;
-create policy "staff read recipes" on public.recipes for select to authenticated using (branch_id=public.current_branch_id());
+create policy "managers read recipes" on public.recipes for select to authenticated
+  using (branch_id=public.current_branch_id() and public.current_staff_role() in ('owner_admin','manager'));
 drop policy if exists "inventory manage recipes" on public.recipes;
-create policy "inventory manage recipes" on public.recipes for all to authenticated
-  using (branch_id=public.current_branch_id() and public.current_staff_role() in ('owner_admin','manager','inventory'))
-  with check (branch_id=public.current_branch_id() and public.current_staff_role() in ('owner_admin','manager','inventory'));
+create policy "managers manage recipes" on public.recipes for all to authenticated
+  using (branch_id=public.current_branch_id() and public.current_staff_role() in ('owner_admin','manager'))
+  with check (branch_id=public.current_branch_id() and public.current_staff_role() in ('owner_admin','manager'));
 
 drop policy if exists "staff read suppliers" on public.suppliers;
-create policy "staff read suppliers" on public.suppliers for select to authenticated using (branch_id=public.current_branch_id());
+create policy "managers read suppliers" on public.suppliers for select to authenticated
+  using (branch_id=public.current_branch_id() and public.current_staff_role() in ('owner_admin','manager'));
 drop policy if exists "inventory manage suppliers" on public.suppliers;
-create policy "inventory manage suppliers" on public.suppliers for all to authenticated
-  using (branch_id=public.current_branch_id() and public.current_staff_role() in ('owner_admin','manager','inventory'))
-  with check (branch_id=public.current_branch_id() and public.current_staff_role() in ('owner_admin','manager','inventory'));
+create policy "managers manage suppliers" on public.suppliers for all to authenticated
+  using (branch_id=public.current_branch_id() and public.current_staff_role() in ('owner_admin','manager'))
+  with check (branch_id=public.current_branch_id() and public.current_staff_role() in ('owner_admin','manager'));
 
 drop policy if exists "staff read purchases" on public.purchase_orders;
-create policy "staff read purchases" on public.purchase_orders for select to authenticated using (branch_id=public.current_branch_id());
+create policy "managers read purchases" on public.purchase_orders for select to authenticated
+  using (branch_id=public.current_branch_id() and public.current_staff_role() in ('owner_admin','manager'));
 drop policy if exists "inventory create purchases" on public.purchase_orders;
-create policy "inventory create purchases" on public.purchase_orders for insert to authenticated
-  with check (branch_id=public.current_branch_id() and public.current_staff_role() in ('owner_admin','manager','inventory') and created_by=(select auth.uid()));
+create policy "managers create purchases" on public.purchase_orders for insert to authenticated
+  with check (branch_id=public.current_branch_id() and public.current_staff_role() in ('owner_admin','manager') and created_by=(select auth.uid()));
 drop policy if exists "staff read purchase items" on public.purchase_order_items;
 create policy "staff read purchase items" on public.purchase_order_items for select to authenticated
-  using (purchase_order_id in (select id from public.purchase_orders where branch_id=public.current_branch_id()));
+  using (
+    purchase_order_id in (
+      select id from public.purchase_orders
+      where branch_id=public.current_branch_id()
+        and public.current_staff_role() in ('owner_admin','manager')
+    )
+  );
 
 drop policy if exists "staff read sales" on public.sales_orders;
 create policy "staff read sales" on public.sales_orders for select to authenticated using (branch_id=public.current_branch_id());
@@ -636,6 +677,7 @@ revoke all on function public.create_ingredient(text,text,numeric,numeric,numeri
 revoke all on function public.save_product_recipe(uuid,jsonb) from public;
 revoke all on function public.create_purchase_order(uuid,jsonb,text) from public;
 revoke all on function public.receive_purchase_order(uuid) from public;
+revoke all on function public.list_readonly_inventory() from public,anon;
 grant execute on function public.bootstrap_business(text,text,text) to authenticated;
 grant execute on function public.create_pos_order(jsonb,text,text,text) to authenticated;
 grant execute on function public.import_legacy_pos_catalog() to authenticated;
@@ -645,5 +687,6 @@ grant execute on function public.create_ingredient(text,text,numeric,numeric,num
 grant execute on function public.save_product_recipe(uuid,jsonb) to authenticated;
 grant execute on function public.create_purchase_order(uuid,jsonb,text) to authenticated;
 grant execute on function public.receive_purchase_order(uuid) to authenticated;
+grant execute on function public.list_readonly_inventory() to authenticated;
 
 notify pgrst, 'reload schema';

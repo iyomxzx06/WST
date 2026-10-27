@@ -1,10 +1,11 @@
 const CONFIG_KEY='havens_system_supabase';
-const ROLE_LABELS={owner_admin:'Owner / Admin',manager:'Manager',cashier:'Cashier',kitchen:'Kitchen',inventory:'Inventory / Purchasing'};
+const ROLE_LABELS={owner_admin:'Owner / Admin',manager:'Manager',cashier:'Cashier',kitchen:'Kitchen'};
 const NAV_ITEMS=[
- {id:'overview',label:'Overview',icon:'⌂',roles:Object.keys(ROLE_LABELS)},
+ {id:'overview',label:'Overview',icon:'⌂',roles:['owner_admin','manager']},
  {id:'pos',label:'POS',icon:'▣',roles:['owner_admin','manager','cashier']},
- {id:'inventory',label:'Inventory',icon:'▤',roles:['owner_admin','manager','inventory']},
- {id:'purchasing',label:'Suppliers & purchasing',icon:'⇧',roles:['owner_admin','manager','inventory']},
+ {id:'online-orders',label:'Online orders',icon:'↗',roles:['owner_admin','manager','cashier']},
+ {id:'inventory',label:'Inventory',icon:'▤',roles:['owner_admin','manager','cashier','kitchen']},
+ {id:'purchasing',label:'Suppliers & purchasing',icon:'⇧',roles:['owner_admin','manager']},
  {id:'kitchen',label:'Kitchen display',icon:'◷',roles:['owner_admin','manager','kitchen','cashier']},
  {id:'staff',label:'Staff & access',icon:'♙',roles:['owner_admin']},
  {id:'expenses',label:'Expenses',icon:'₱',roles:['owner_admin','manager']},
@@ -32,7 +33,7 @@ function shiftDateString(dateString,days){
  const date=new Date(Date.UTC(year,month-1,day+days));
  return `${date.getUTCFullYear()}-${String(date.getUTCMonth()+1).padStart(2,'0')}-${String(date.getUTCDate()).padStart(2,'0')}`;
 }
-let client=null,clientConfig=null,profile=null,activePage='overview',cart=new Map(),products=[],ingredients=[],suppliers=[],realtimeChannel=null,realtimeTimer=0;
+let client=null,clientConfig=null,profile=null,activePage='overview',cart=new Map(),products=[],ingredients=[],suppliers=[],realtimeChannel=null,realtimeTimer=0,pageLoadToken=0;
 let checkoutAttempt={signature:'',key:''};
 let catalogAutoImportInProgress=false;
 const authCallbackParams=new URLSearchParams(window.location.hash.slice(1));
@@ -88,16 +89,42 @@ function signedIn(){
  $('roleBadge').textContent=ROLE_LABELS[profile.role]||profile.role;
  $('branchLabel').textContent='Single branch · '+profile.branch_id.slice(0,8);
  buildNavigation();
+ closeMobileNavigation();
  subscribeToBranchChanges();
  openPage(activePage);
 }
 function buildNavigation(){
  $('mainNav').innerHTML=NAV_ITEMS.filter(item=>item.roles.includes(profile.role)).map(item=>
-  `<button class="nav-button ${item.id===activePage?'active':''}" data-page="${item.id}" type="button"><span class="nav-icon">${item.icon}</span>${item.label}</button>`
+  `<button class="nav-button ${item.id===activePage?'active':''}" data-page="${item.id}" type="button" aria-current="${item.id===activePage?'page':'false'}"><span class="nav-icon" aria-hidden="true">${item.icon}</span><span>${item.label}</span></button>`
  ).join('');
  $('mainNav').querySelectorAll('[data-page]').forEach(button=>button.addEventListener('click',()=>{
-  $('sidebar').classList.remove('open');openPage(button.dataset.page);
+  closeMobileNavigation();openPage(button.dataset.page);
  }));
+}
+function closeMobileNavigation(){
+ const restoreFocus=window.matchMedia('(max-width: 980px)').matches&&$('sidebar').contains(document.activeElement);
+ $('sidebar').classList.remove('open');
+ $('sidebarBackdrop').classList.remove('visible');
+ syncMobileNavigation();
+ if(restoreFocus)$('menuToggle').focus();
+}
+function syncMobileNavigation(){
+ const isMobile=window.matchMedia('(max-width: 980px)').matches;
+ const isOpen=isMobile&&$('sidebar').classList.contains('open');
+ if(!isMobile){
+  $('sidebar').classList.remove('open');
+  $('sidebarBackdrop').classList.remove('visible');
+ }
+ $('sidebar').inert=isMobile&&!isOpen;
+ $('sidebar').setAttribute('aria-hidden',String(isMobile&&!isOpen));
+ $('menuToggle').setAttribute('aria-expanded',String(isOpen));
+ $('menuToggle').setAttribute('aria-label',isOpen?'Close menu':'Open menu');
+}
+function toggleMobileNavigation(){
+ const isOpen=$('sidebar').classList.toggle('open');
+ $('sidebarBackdrop').classList.toggle('visible',isOpen);
+ syncMobileNavigation();
+ if(isOpen)$('mainNav').querySelector('.nav-button')?.focus();
 }
 async function resolveSignedInUser(user){
  const staff=await getProfile(user.id);
@@ -204,6 +231,7 @@ function subscribeToBranchChanges(){
  if(realtimeChannel)client.removeChannel(realtimeChannel);
  realtimeChannel=client.channel('branch-updates-'+profile.branch_id)
   .on('postgres_changes',{event:'*',schema:'public',table:'sales_orders',filter:'branch_id=eq.'+profile.branch_id},refreshActiveModule)
+  .on('postgres_changes',{event:'*',schema:'public',table:'online_orders',filter:'branch_id=eq.'+profile.branch_id},refreshActiveModule)
   .on('postgres_changes',{event:'*',schema:'public',table:'ingredients',filter:'branch_id=eq.'+profile.branch_id},refreshActiveModule)
   .on('postgres_changes',{event:'*',schema:'public',table:'inventory_movements',filter:'branch_id=eq.'+profile.branch_id},refreshActiveModule)
   .subscribe(status=>{
@@ -213,17 +241,31 @@ function subscribeToBranchChanges(){
 function refreshActiveModule(){
  window.clearTimeout(realtimeTimer);
  realtimeTimer=window.setTimeout(()=>{
-  if(profile&&['overview','pos','inventory','kitchen','reports'].includes(activePage))openPage(activePage);
+  if(profile&&['overview','pos','online-orders','inventory','kitchen','reports'].includes(activePage))openPage(activePage);
  },250);
 }
 function openPage(page){
  const item=NAV_ITEMS.find(candidate=>candidate.id===page&&candidate.roles.includes(profile?.role));
- if(!item){page='overview';}
+ if(!item){
+  const firstAllowedPage=NAV_ITEMS.find(candidate=>candidate.roles.includes(profile?.role));
+  if(!firstAllowedPage){appMessage('No modules are available for this staff role. Ask the Owner/Admin for help.');return;}
+  page=firstAllowedPage.id;
+ }
  activePage=page;buildNavigation();
  $('pageTitle').textContent=NAV_ITEMS.find(x=>x.id===page)?.label||'Overview';
- const renderers={overview:renderOverview,pos:renderPos,inventory:renderInventory,purchasing:renderPurchasing,kitchen:renderKitchen,staff:renderStaff,expenses:renderExpenses,reports:renderReports};
- $('pageContent').innerHTML='<div class="empty">Loading…</div>';
- Promise.resolve(renderers[page]()).catch(error=>appMessage(error.message||'Could not load this module.'));
+ const renderers={overview:renderOverview,pos:renderPos,'online-orders':renderOnlineOrders,inventory:renderInventory,purchasing:renderPurchasing,kitchen:renderKitchen,staff:renderStaff,expenses:renderExpenses,reports:renderReports};
+ const content=$('pageContent'),loadToken=++pageLoadToken;
+ content.setAttribute('aria-busy','true');
+ content.innerHTML='<div class="loading-state" role="status"><span class="loading-spinner" aria-hidden="true"></span><span>Loading your workspace…</span></div>';
+ Promise.resolve().then(()=>renderers[page]()).then(()=>{
+  if(loadToken===pageLoadToken)content.setAttribute('aria-busy','false');
+ }).catch(error=>{
+  if(loadToken!==pageLoadToken)return;
+  content.setAttribute('aria-busy','false');
+  content.innerHTML=`<div class="load-error" role="alert"><b>This section could not be loaded.</b><span>${esc(error.message||'Please try again.')}</span><button class="secondary" id="retryModule" type="button">Try again</button></div>`;
+  $('retryModule').addEventListener('click',()=>openPage(page));
+  appMessage(error.message||'Could not load this module.');
+ });
 }
 async function fetchRows(table,columns='*',order='created_at'){
  const {data,error}=await client.from(table).select(columns).order(order,{ascending:false});
@@ -288,6 +330,59 @@ function chooseBurgerVariant(number,options,addOns){
 function burgerLabel(number){
  return {1:'Classic Burger',2:'Cheese Burger',3:'Deluxe Burger',4:'Double Cheese Burger'}[number];
 }
+async function renderOnlineOrders(){
+ const columns='id,public_reference,customer_name,customer_phone,fulfillment_type,delivery_address,delivery_landmark,delivery_fee,payment_method,subtotal,total,notes,status,created_at,online_order_items(id,product_name,quantity,unit_price)';
+ const [pendingResult,recentResult]=await Promise.all([
+  client.from('online_orders').select(columns).eq('status','pending').order('created_at',{ascending:true}),
+  client.from('online_orders').select(columns).neq('status','pending').order('created_at',{ascending:false}).limit(20)
+ ]);
+ if(pendingResult.error)dbError(pendingResult.error);
+ if(recentResult.error)dbError(recentResult.error);
+ const pending=pendingResult.data||[],recent=recentResult.data||[];
+ $('pageContent').innerHTML=`<div class="page-heading module-heading"><div><span class="inventory-item-label">CUSTOMER ORDERS</span><h2>Online orders</h2><p>Review incoming orders, confirm with the customer, then send accepted orders to the kitchen.</p></div><button id="refreshOnlineOrders" class="secondary refresh-button" type="button">↻ Refresh</button></div>
+  <div class="online-orders-note"><span class="online-orders-note-icon">i</span><span>Delivery has a flat <b>₱30 fee</b> and is subject to staff confirming the service area. Cash and GCash are recorded as payment preferences; collect payment outside this app. No online payment is processed.</span></div>
+  <section class="panel module-panel"><div class="section-heading"><div><h2>Needs your confirmation</h2><p>Accepting an order checks stock, records the sale, and sends it to Kitchen display.</p></div><span class="pill ${pending.length?'orange':'green'}">${pending.length} waiting</span></div>${pending.length?`<div class="online-order-list">${pending.map(onlineOrderCard).join('')}</div>`:'<div class="empty empty-success"><span class="empty-success-mark">✓</span><b>All caught up</b><span>New customer orders will appear here.</span></div>'}</section>
+  ${recent.length?`<section class="panel module-panel"><div class="section-heading"><div><h2>Recent online orders</h2><p>Latest 20 processed requests.</p></div></div><div class="online-order-list">${recent.map(onlineOrderCard).join('')}</div></section>`:''}`;
+ $('refreshOnlineOrders').addEventListener('click',()=>openPage('online-orders'));
+ $('pageContent').querySelectorAll('[data-accept-online]').forEach(button=>button.addEventListener('click',()=>acceptOnlineOrder(button)));
+ $('pageContent').querySelectorAll('[data-reject-online]').forEach(button=>button.addEventListener('click',()=>rejectOnlineOrder(button)));
+}
+function onlineOrderCard(order){
+ const date=new Date(order.created_at).toLocaleString('en-PH',{timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'short'});
+ const statusLabel={pending:'Needs confirmation',accepted:'Accepted',rejected:'Declined',new:'In kitchen',preparing:'Preparing',ready:'Ready',served:'Completed',void:'Voided'}[order.status]||order.status;
+ const isPending=order.status==='pending';
+ return `<article class="online-order-card ${isPending?'online-order-pending':''}">
+  <div class="online-order-top"><div><span class="online-order-reference">${esc(order.public_reference)}</span><span class="pill ${isPending?'orange':order.status==='rejected'?'red':'green'}">${esc(statusLabel)}</span></div><time>${esc(date)}</time></div>
+  <div class="online-order-customer"><b>${esc(order.customer_name)}</b><a href="tel:${esc(order.customer_phone)}">${esc(order.customer_phone)}</a></div>
+  <div class="online-order-tags"><span class="pill blue">${order.fulfillment_type==='delivery'?'Delivery':'Pickup'}</span><span class="pill">${order.payment_method==='gcash'?'GCash · collect manually':'Cash · collect on fulfillment'}</span></div>
+  <ul class="online-order-items">${(order.online_order_items||[]).map(item=>`<li><span><b>${Number(item.quantity)}×</b> ${esc(item.product_name)}</span><b>${peso(Number(item.quantity)*Number(item.unit_price))}</b></li>`).join('')}</ul>
+  ${order.fulfillment_type==='delivery'?`<div class="online-order-address"><b>Delivery address</b><span>${esc(order.delivery_address)}</span>${order.delivery_landmark?`<small>Landmark: ${esc(order.delivery_landmark)}</small>`:''}</div>`:''}
+  ${order.notes?`<div class="ticket-note"><b>Customer note:</b> ${esc(order.notes)}</div>`:''}
+  <div class="online-order-total"><span>${order.delivery_fee?`Subtotal ${peso(order.subtotal)} + delivery ${peso(order.delivery_fee)}`:'Order total'}</span><b>${peso(order.total)}</b></div>
+  ${isPending?`<div class="online-order-actions"><button class="primary" type="button" data-accept-online="${esc(order.id)}">Accept & send to kitchen</button><button class="secondary" type="button" data-reject-online="${esc(order.id)}">Decline</button></div>`:''}
+ </article>`;
+}
+async function acceptOnlineOrder(button){
+ const orderId=button.dataset.acceptOnline;
+ if(!window.confirm('Accept this customer order? This checks and deducts stock, records the sale, and sends it to Kitchen display.'))return;
+ button.disabled=true;
+ try{
+  const {error}=await client.rpc('accept_online_order',{p_order_id:orderId});
+  if(error)dbError(error);
+ }catch(error){appMessage('Could not accept this online order: '+error.message);button.disabled=false;return;}
+ appMessage('Online order accepted and sent to Kitchen display.',false);
+ openPage('online-orders');
+}
+async function rejectOnlineOrder(button){
+ if(!window.confirm('Decline this online order? No stock will be deducted.'))return;
+ button.disabled=true;
+ try{
+  const {error}=await client.rpc('reject_online_order',{p_order_id:button.dataset.rejectOnline});
+  if(error)dbError(error);
+ }catch(error){appMessage('Could not decline this online order: '+error.message);button.disabled=false;return;}
+ appMessage('Online order declined.',false);
+ openPage('online-orders');
+}
 async function renderPos(){
  await loadPosCatalog();
  const burgerGroups=new Map();
@@ -299,11 +394,17 @@ async function renderPos(){
   if(!burgerGroups.has(option.number))burgerGroups.set(option.number,[]);
   burgerGroups.get(option.number).push(product);
  });
- $('pageContent').innerHTML=`<div class="page-heading"><div><h2>New order</h2><p>Choose a burger, select its size and any add-ons, then review the order.</p></div></div>
-  <div class="grid pos-layout"><section class="panel pos-menu-panel"><div class="section-heading"><div><h2>Choose a burger</h2><p>Tap a card to choose Single or B1T1.</p></div><span class="pill">4 burgers</span></div><div class="grid pos-menu-grid">${[1,2,3,4].map(number=>{const options=burgerGroups.get(String(number))||[];const image=`./images/B${number}.jpg`;return `<button class="card product-button" data-burger="${number}" type="button"${options.length?'':' disabled'}><span class="product-photo-wrap"><img class="product-photo" src="${image}" alt="B${number} ${burgerLabel(number)}" loading="lazy"><span class="product-code">B${number}</span></span><span class="product-name">${burgerLabel(number)}</span><span class="product-prompt">${options.length?(options.length>1?'Choose Single or B1T1':'Choose option'):'Product not set up'}</span></button>`;}).join('')}</div></section>
+ $('pageContent').innerHTML=`<div class="page-heading"><div><span class="inventory-item-label">FRESH OFF THE GRILL</span><h2>Make it a good one.</h2><p>Choose a burger, customize it, and send it straight to the kitchen.</p></div></div>
+  <button id="menuPosterOpen" class="menu-poster-preview" type="button" aria-label="View the Havens Burger singles menu poster">
+   <img src="./images/havens-singles-menu.png" alt="" loading="lazy">
+   <span class="menu-poster-copy"><span class="inventory-item-label">THE HAVENS BURGER STATION</span><b>Singles menu</b><small>See the full menu artwork · Live prices are shown on the burger cards.</small></span>
+   <span class="menu-poster-action" aria-hidden="true">View poster <span>↗</span></span>
+  </button>
+  <div class="grid pos-layout"><section class="panel pos-menu-panel"><div class="section-heading"><div><h2>Pick your favorite</h2><p>Choose a burger to see sizes and add-ons.</p></div><span class="pill">4 signatures</span></div><div class="grid pos-menu-grid">${[1,2,3,4].map(number=>{const options=burgerGroups.get(String(number))||[];const image=`./images/B${number}.jpg`;const startingPrice=options.length?Math.min(...options.map(option=>Number(option.price))):null;return `<button class="card product-button" data-burger="${number}" type="button"${options.length?'':' disabled'}><span class="product-photo-wrap"><img class="product-photo" src="${image}" alt="B${number} ${burgerLabel(number)}" loading="lazy"><span class="product-code">B${number}</span></span><span class="product-name">${burgerLabel(number)}</span><span class="product-card-footer"><span class="product-prompt">${options.length?(options.length>1?'Single · B1T1':'Signature burger'):'Product not set up'}</span>${startingPrice===null?'':`<span class="product-price">from ${peso(startingPrice)}</span>`}</span></button>`;}).join('')}</div></section>
   <section class="panel pos-cart-panel"><div class="section-heading"><div><h2>Your order</h2><p>Review items before checkout.</p></div><span id="cartCount" class="pill">0 items</span></div><div id="cartLines"></div><div class="checkout-fields"><label for="paymentMethod">Payment</label><select id="paymentMethod"><option value="cash">Cash</option><option value="gcash">GCash</option><option value="card">Card</option></select><div id="paymentDetails"></div><label for="orderType">Order type</label><select id="orderType"><option value="dine_in">Dine-in</option><option value="takeout">Takeout</option></select><label for="orderNotes">Notes</label><textarea id="orderNotes" maxlength="500" placeholder="Optional kitchen notes"></textarea><button id="placeOrder" class="primary wide" type="button">Place order</button></div></section></div>
   <section class="panel"><h2>Recent orders</h2><div id="recentOrders" class="empty">Loading orders…</div></section>`;
  $('pageContent').querySelectorAll('.product-photo').forEach(image=>image.addEventListener('error',()=>{image.hidden=true;},{once:true}));
+ $('menuPosterOpen').addEventListener('click',showMenuPoster);
  $('pageContent').querySelectorAll('[data-burger]').forEach(button=>button.addEventListener('click',()=>{
   const number=button.dataset.burger;
   chooseBurgerVariant(number,burgerGroups.get(number)||[],addOnProducts);
@@ -312,6 +413,13 @@ async function renderPos(){
  $('paymentMethod').addEventListener('change',updatePaymentDetails);
  updatePaymentDetails();
  drawCart();await renderRecentOrders();
+}
+function showMenuPoster(){
+ $('dialogTitle').textContent='Havens Burger Station · Singles Menu';
+ $('dialogContent').innerHTML='<div class="menu-poster-dialog"><img src="./images/havens-singles-menu.png" alt="Havens Burger Station singles menu poster"><p>Poster artwork only. Current POS prices are shown on the burger cards and confirmed in the order.</p></div>';
+ const dialog=$('dialog');
+ dialog.showModal();
+ $('dialog').querySelector('.dialog-head button').focus();
 }
 function drawCart(){
  const target=$('cartLines');if(!target)return;
@@ -375,11 +483,17 @@ async function renderRecentOrders(){
  target.innerHTML=data?.length?`<table><thead><tr><th>Order</th><th>Time</th><th>Status</th><th>Payment</th><th class="right">Total</th></tr></thead><tbody>${data.map(row=>`<tr><td>#${row.order_number}</td><td>${new Date(row.created_at).toLocaleTimeString()}</td><td><span class="pill">${esc(row.status)}</span></td><td>${esc(row.payment_method)}</td><td class="right">${peso(row.total)}</td></tr>`).join('')}</tbody></table>`:'No orders yet.';
 }
 async function renderInventory(){
- ingredients=await fetchRows('ingredients','*','name');
+ const canManageInventory=['owner_admin','manager'].includes(profile.role);
+ const inventoryRequest=canManageInventory
+  ?client.from('ingredients').select('id,name,unit,stock_quantity,reorder_level,unit_cost,active')
+  :client.rpc('list_readonly_inventory');
+ const {data:inventoryRows,error:inventoryError}=await inventoryRequest;
+ if(inventoryError)dbError(inventoryError);
+ ingredients=inventoryRows||[];
  const {data:catalogImport,error:catalogImportError}=await client.from('catalog_file_imports')
   .select('products_imported,products_skipped,imported_at').eq('branch_id',profile.branch_id).maybeSingle();
  if(catalogImportError)dbError(catalogImportError);
- if(!catalogImport&&!catalogAutoImportInProgress){
+ if(canManageInventory&&!catalogImport&&!catalogAutoImportInProgress){
   catalogAutoImportInProgress=true;
   try{
    const {data,error}=await client.rpc('import_hb_v11_catalog');
@@ -396,17 +510,19 @@ async function renderInventory(){
   const bIndex=ingredientOrder.indexOf(b.name.trim().toLowerCase());
   return (aIndex<0?ingredientOrder.length:aIndex)-(bIndex<0?ingredientOrder.length:bIndex)||a.name.localeCompare(b.name);
  });
- $('pageContent').innerHTML=`<div class="page-heading"><div><h2>Inventory</h2><p>Set each ingredient's actual quantity directly—no need to type its name.</p></div>${catalogImport?'<span class="pill green">Default menu ready</span>':'<button id="importHbCatalog" class="secondary" type="button">Add missing default menu</button>'}</div>
-  <section class="notice inventory-opening-note">Update any ingredient counts you need, then press “Save all counts” once. Leave other counts unchanged. New inventory items start at 0.</section>
-  ${missingStockLabels(ingredients).length?`<section class="notice inventory-missing-note">Some standard inventory labels are missing: ${missingStockLabels(ingredients).map(esc).join(', ')}. Run the corrected migrations/004_inventory_stock_rules.sql in Supabase first, then refresh.</section>`:''}
-  ${catalogImport?'':`<section class="panel"><h2>Default menu</h2><p class="muted">The default catalog adds B1 Classic, B2 Cheese, B3 Deluxe, and B4 Double Cheese, each with Single and B1T1 options, plus the seven extras from hb.html. It skips existing same-name products and never changes current stock.</p></section>`}
-  <section class="panel"><h2>Opening / current stock</h2><form id="stockCountForm"><div class="table-wrap">${ingredientTable(ingredients)}</div><button id="saveAllStockCounts" class="primary wide" type="submit">Save all counts</button></form></section>
-  <section class="panel"><h2>Add POS product</h2><form id="productForm" class="form-grid"><div><label>Product name</label><input name="name" maxlength="120" required></div><div><label>Price (₱)</label><input name="price" type="number" min="0" step="0.01" required></div><div class="full"><button class="primary wide">Add product</button></div></form></section>
-  <details class="panel inventory-custom-ingredient"><summary>Add another ingredient</summary><form id="ingredientForm" class="form-grid"><div><label>Ingredient name</label><input name="name" maxlength="120" required></div><div><label>Stock unit</label><input name="unit" maxlength="24" required></div><div><label>Opening stock</label><input name="starting_stock" type="number" min="0" step="0.001" value="0" required></div><div><label>Alert me when at</label><input name="reorder_level" type="number" min="0" step="0.001" value="0" required></div><div class="full"><label>Cost per unit (₱)</label><input name="unit_cost" type="number" min="0" step="0.0001" value="0"></div><div class="full"><button class="primary wide">Add ingredient</button></div></form></details>`;
- $('ingredientForm').addEventListener('submit',createIngredient);
- $('productForm').addEventListener('submit',createProduct);
- if(!catalogImport)$('importHbCatalog').addEventListener('click',importHbCatalog);
- $('stockCountForm').addEventListener('submit',saveStockCounts);
+ $('pageContent').innerHTML=`<div class="page-heading"><div><h2>Inventory</h2><p>${canManageInventory?"Set each ingredient's actual quantity directly—no need to type its name.":'View current ingredient stock. Contact the Manager to make changes.'}</p></div>${canManageInventory?(catalogImport?'<span class="pill green">Default menu ready</span>':'<button id="importHbCatalog" class="secondary" type="button">Add missing default menu</button>'):''}</div>
+  ${canManageInventory?'<section class="notice inventory-opening-note">Update any ingredient counts you need, then press “Save all counts” once. Leave other counts unchanged. New inventory items start at 0.</section>':''}
+  ${canManageInventory&&missingStockLabels(ingredients).length?`<section class="notice inventory-missing-note">Some standard inventory labels are missing: ${missingStockLabels(ingredients).map(esc).join(', ')}. Run the corrected migrations/004_inventory_stock_rules.sql in Supabase first, then refresh.</section>`:''}
+  ${canManageInventory&&!catalogImport?`<section class="panel"><h2>Default menu</h2><p class="muted">The default catalog adds B1 Classic, B2 Cheese, B3 Deluxe, and B4 Double Cheese, each with Single and B1T1 options, plus the seven extras from hb.html. It skips existing same-name products and never changes current stock.</p></section>`:''}
+  <section class="panel"><h2>${canManageInventory?'Opening / current stock':'Current stock'}</h2>${canManageInventory?`<form id="stockCountForm"><div class="table-wrap">${ingredientTable(ingredients)}</div><button id="saveAllStockCounts" class="primary wide" type="submit">Save all counts</button></form>`:`<div class="table-wrap">${ingredientTable(ingredients,true)}</div>`}</section>
+  ${canManageInventory?`<section class="panel"><h2>Add POS product</h2><form id="productForm" class="form-grid"><div><label>Product name</label><input name="name" maxlength="120" required></div><div><label>Price (₱)</label><input name="price" type="number" min="0" step="0.01" required></div><div class="full"><button class="primary wide">Add product</button></div></form></section>
+  <details class="panel inventory-custom-ingredient"><summary>Add another ingredient</summary><form id="ingredientForm" class="form-grid"><div><label>Ingredient name</label><input name="name" maxlength="120" required></div><div><label>Stock unit</label><input name="unit" maxlength="24" required></div><div><label>Opening stock</label><input name="starting_stock" type="number" min="0" step="0.001" value="0" required></div><div><label>Alert me when at</label><input name="reorder_level" type="number" min="0" step="0.001" value="0" required></div><div class="full"><label>Cost per unit (₱)</label><input name="unit_cost" type="number" min="0" step="0.0001" value="0"></div><div class="full"><button class="primary wide">Add ingredient</button></div></form></details>`:''}`;
+ if(canManageInventory){
+  $('ingredientForm').addEventListener('submit',createIngredient);
+  $('productForm').addEventListener('submit',createProduct);
+  if(!catalogImport)$('importHbCatalog').addEventListener('click',importHbCatalog);
+  $('stockCountForm').addEventListener('submit',saveStockCounts);
+ }
 }
 async function importHbCatalog(){
  const accepted=window.confirm('Add the default menu and inventory stock rules? Existing same-name products will be skipped. Existing opening stock will not change; new inventory items start at 0. Sales history is not imported.');
@@ -422,9 +538,9 @@ async function importHbCatalog(){
   if(button)button.disabled=false;
  }
 }
-function ingredientTable(rows){
+function ingredientTable(rows,readOnly=false){
  if(!rows.length)return '<div class="empty">No ingredients yet.</div>';
- return `<div class="inventory-grid">${rows.map(row=>{const low=Number(row.stock_quantity)<=Number(row.reorder_level);return `<article class="inventory-item ${low?'inventory-item-low':''}"><div class="inventory-item-heading"><div><span class="inventory-item-label">Ingredient</span><h3>${esc(ingredientLabel(row.name))}</h3></div><span class="pill ${low?'orange':'green'}">${low?'Low stock':'In stock'}</span></div><div class="inventory-item-balance"><span>Current stock</span><b>${Number(row.stock_quantity)} <small>${esc(row.unit)}</small></b></div><div class="inventory-item-meta"><span>Reorder at <b>${Number(row.reorder_level)} ${esc(row.unit)}</b></span><span>Unit cost <b>${peso(row.unit_cost)}</b></span></div><label class="inventory-count-label" for="stock-count-${row.id}">Counted quantity</label><div class="stock-count-control"><input id="stock-count-${row.id}" name="stock_count_${row.id}" type="number" min="0" step="0.001" value="${Number(row.stock_quantity)}" required><span>${esc(row.unit)}</span></div></article>`;}).join('')}</div>`;
+ return `<div class="inventory-grid">${rows.map(row=>{const low=!readOnly&&Number(row.stock_quantity)<=Number(row.reorder_level);return `<article class="inventory-item ${low?'inventory-item-low':''}"><div class="inventory-item-heading"><div><span class="inventory-item-label">Ingredient</span><h3>${esc(ingredientLabel(row.name))}</h3></div><span class="pill ${readOnly?'blue':low?'orange':'green'}">${readOnly?'Stock':low?'Low stock':'In stock'}</span></div><div class="inventory-item-balance"><span>Current stock</span><b>${Number(row.stock_quantity)} <small>${esc(row.unit)}</small></b></div>${readOnly?'':`<div class="inventory-item-meta"><span>Reorder at <b>${Number(row.reorder_level)} ${esc(row.unit)}</b></span><span>Unit cost <b>${peso(row.unit_cost)}</b></span></div><label class="inventory-count-label" for="stock-count-${row.id}">Counted quantity</label><div class="stock-count-control"><input id="stock-count-${row.id}" name="stock_count_${row.id}" type="number" min="0" step="0.001" value="${Number(row.stock_quantity)}" required><span>${esc(row.unit)}</span></div>`}</article>`;}).join('')}</div>`;
 }
 function ingredientOptions(rows){
  const activeRows=rows.filter(row=>row.active);
@@ -491,11 +607,12 @@ async function createProduct(event){
 }
 async function renderPurchasing(){
  const [supplierRows,ingredientRows,orders]=await Promise.all([
-  fetchRows('suppliers','*','name'),fetchRows('ingredients','id,name,unit,stock_quantity','name'),
+  fetchRows('suppliers','*','name'),client.from('ingredients').select('id,name,unit,stock_quantity,active').eq('active',true).order('name'),
   client.from('purchase_orders').select('id,status,notes,created_at,suppliers(name),purchase_order_items(quantity,unit_cost,ingredients(name,unit))').order('created_at',{ascending:false}).limit(30)
  ]);
+ if(ingredientRows.error)dbError(ingredientRows.error);
  if(orders.error)dbError(orders.error);
- suppliers=supplierRows;ingredients=ingredientRows;
+ suppliers=supplierRows;ingredients=ingredientRows.data||[];
  $('pageContent').innerHTML=`<div class="page-heading module-heading"><div><span class="inventory-item-label">INVENTORY OPERATIONS</span><h2>Suppliers & purchasing</h2><p>Create purchase orders and receive deliveries into ingredient stock.</p></div><span class="pill">${suppliers.length} ${suppliers.length===1?'supplier':'suppliers'}</span></div>
   <div class="grid two-col purchasing-forms">
    <section class="panel module-panel"><div class="module-form-heading"><span class="module-form-icon">＋</span><div><h2>Add supplier</h2><p>Keep supplier contact details handy.</p></div></div><form id="supplierForm" class="form-grid"><div class="full"><label>Supplier name</label><input name="name" maxlength="120" required></div><div><label>Contact person</label><input name="contact_name" maxlength="120"></div><div><label>Phone</label><input name="phone" maxlength="40"></div><div class="full"><label>Email</label><input name="email" type="email" maxlength="200"></div><div class="full"><button class="primary wide">Save supplier</button></div></form></section>
@@ -561,8 +678,8 @@ async function renderStaff(){
  const {data,error}=await client.from('staff_profiles').select('user_id,display_name,role,active,created_at').order('created_at');
  if(error)dbError(error);
  $('pageContent').innerHTML=`<div class="page-heading module-heading"><div><span class="inventory-item-label">TEAM MANAGEMENT</span><h2>Staff & access</h2><p>Invite staff by email. Each person sets their own password from the invitation email.</p></div><span class="pill">${(data||[]).length} staff</span></div>
-  <div class="grid two-col staff-layout"><section class="panel module-panel"><div class="module-form-heading"><span class="module-form-icon">＋</span><div><h2>Invite staff member</h2><p>Choose the access needed for their role.</p></div></div><form id="staffForm" class="staff-form"><label>Staff name</label><input name="display_name" maxlength="120" autocomplete="name" required><label>Email</label><input name="email" type="email" autocomplete="off" required><label>Role</label><select name="role"><option value="manager">Manager</option><option value="cashier">Cashier</option><option value="kitchen">Kitchen</option><option value="inventory">Inventory / Purchasing</option></select><button class="primary wide">Send invitation</button></form><p class="hint staff-security-note">Owner/Admin access cannot be assigned from this form. Keep the service-role key server-side only.</p></section>
-  <section class="panel module-panel"><div class="section-heading"><div><h2>Role access</h2><p>Access is limited by each staff member's role.</p></div></div><div class="role-guide"><div><span class="role-guide-mark role-admin">A</span><span><b>Owner / Admin</b><small>Business setup and all enabled modules</small></span></div><div><span class="role-guide-mark role-manager">M</span><span><b>Manager</b><small>Operations, purchasing, expenses, reports</small></span></div><div><span class="role-guide-mark role-cashier">C</span><span><b>Cashier</b><small>POS and kitchen order status</small></span></div><div><span class="role-guide-mark role-kitchen">K</span><span><b>Kitchen</b><small>Kitchen tickets and status</small></span></div><div><span class="role-guide-mark role-inventory">I</span><span><b>Inventory / Purchasing</b><small>Stock and supplier orders</small></span></div></div><div class="staff-list-heading"><h2>Staff accounts</h2><span class="pill">${(data||[]).length}</span></div><div class="table-wrap">${staffTable(data||[])}</div></section></div>`;
+  <div class="grid two-col staff-layout"><section class="panel module-panel"><div class="module-form-heading"><span class="module-form-icon">＋</span><div><h2>Invite staff member</h2><p>Choose the access needed for their role.</p></div></div><form id="staffForm" class="staff-form"><label>Staff name</label><input name="display_name" maxlength="120" autocomplete="name" required><label>Email</label><input name="email" type="email" autocomplete="off" required><label>Role</label><select name="role"><option value="manager">Manager</option><option value="cashier">Cashier</option><option value="kitchen">Kitchen</option></select><button class="primary wide" type="submit">Send invitation</button></form><p class="hint staff-security-note">Managers handle inventory and purchasing. Owner/Admin access cannot be assigned from this form. Keep the service-role key server-side only.</p></section>
+  <section class="panel module-panel"><div class="section-heading"><div><h2>Role access</h2><p>Access is limited by each staff member's role.</p></div></div><div class="role-guide"><div><span class="role-guide-mark role-admin">A</span><span><b>Owner / Admin</b><small>All modules and business setup</small></span></div><div><span class="role-guide-mark role-manager">M</span><span><b>Manager</b><small>All modules except Staff & access</small></span></div><div><span class="role-guide-mark role-cashier">C</span><span><b>Cashier</b><small>POS, Kitchen, and read-only Inventory</small></span></div><div><span class="role-guide-mark role-kitchen">K</span><span><b>Kitchen</b><small>Kitchen display and read-only Inventory</small></span></div></div><div class="staff-list-heading"><h2>Staff accounts</h2><span class="pill">${(data||[]).length}</span></div><div class="table-wrap">${staffTable(data||[])}</div></section></div>`;
  $('staffForm').addEventListener('submit',createStaff);
  $('pageContent').querySelectorAll('[data-resend-invite]').forEach(button=>button.addEventListener('click',()=>resendStaffInvite(button)));
 }
@@ -684,5 +801,9 @@ $('forgotPasswordButton').addEventListener('click',onForgotPassword);
 $('bootstrapForm').addEventListener('submit',onBootstrap);
 $('cancelBootstrap').addEventListener('click',signOut);
 $('signOutButton').addEventListener('click',signOut);
-$('menuToggle').addEventListener('click',()=>$('sidebar').classList.toggle('open'));
-initialize();
+ $('menuToggle').addEventListener('click',toggleMobileNavigation);
+ $('sidebarBackdrop').addEventListener('click',closeMobileNavigation);
+ document.addEventListener('keydown',event=>{if(event.key==='Escape')closeMobileNavigation();});
+ window.matchMedia('(max-width: 980px)').addEventListener('change',syncMobileNavigation);
+ syncMobileNavigation();
+ initialize();
