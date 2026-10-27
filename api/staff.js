@@ -84,7 +84,7 @@ module.exports = async function handler(req, res) {
       const userResponse = await fetch(`${baseUrl}/auth/v1/admin/users/${encodeURIComponent(user_id)}`, { headers });
       if (!userResponse.ok) return send(res, 500, { error: "Could not verify the staff email in Supabase Auth." });
       const userResult = await userResponse.json();
-      const invitedUser = userResult.user;
+      const invitedUser = userResult.user || userResult;
       if (!invitedUser?.email) return send(res, 404, { error: "The staff Auth account could not be found." });
       if (invitedUser.email_confirmed_at) {
         return send(res, 409, { error: "This account has already accepted an invitation. Ask the staff member to use Forgot password on the login screen." });
