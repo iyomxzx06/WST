@@ -18,20 +18,29 @@ module.exports = async function handler(req, res) {
 
   const supabaseUrl = process.env.SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !serviceRoleKey) {
+  const appUrl = process.env.APP_URL;
+  if (!supabaseUrl || !serviceRoleKey || !appUrl) {
     return send(res, 500, { error: "Staff invitations are not configured on the server." });
+  }
+  try {
+    new URL(appUrl);
+  } catch {
+    return send(res, 500, { error: "The staff invitation redirect URL is invalid. Check APP_URL in Vercel." });
   }
 
   const authorization = req.headers.authorization || "";
   const accessToken = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
   if (!accessToken) return send(res, 401, { error: "Sign in is required." });
 
-  const { display_name, email, role } = req.body || {};
-  if (
+  const { action, display_name, email, role, user_id } = req.body || {};
+  const isResend = action === "resend";
+  if (isResend && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(user_id || "")) {
+    return send(res, 400, { error: "Select a valid staff account." });
+  }
+  if (!isResend && (
     typeof display_name !== "string" || !display_name.trim() || display_name.trim().length > 120 ||
     typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
-    !ALLOWED_ROLES.has(role)
-  ) {
+    !ALLOWED_ROLES.has(role))) {
     return send(res, 400, { error: "Enter a valid staff name, email, and non-admin role." });
   }
 
@@ -60,8 +69,45 @@ module.exports = async function handler(req, res) {
       return send(res, 403, { error: "Only an active Owner/Admin can invite staff." });
     }
 
+    if (isResend) {
+      const staffResponse = await fetch(
+        `${baseUrl}/rest/v1/staff_profiles?select=user_id,role&user_id=eq.${encodeURIComponent(user_id)}&business_id=eq.${encodeURIComponent(profile.business_id)}`,
+        { headers }
+      );
+      if (!staffResponse.ok) return send(res, 500, { error: "Could not verify the staff account." });
+      const staffRows = await staffResponse.json();
+      const staff = staffRows[0];
+      if (!staff || staff.role === "owner_admin") {
+        return send(res, 404, { error: "That staff account was not found in your business." });
+      }
+
+      const userResponse = await fetch(`${baseUrl}/auth/v1/admin/users/${encodeURIComponent(user_id)}`, { headers });
+      if (!userResponse.ok) return send(res, 500, { error: "Could not verify the staff email in Supabase Auth." });
+      const userResult = await userResponse.json();
+      const invitedUser = userResult.user;
+      if (!invitedUser?.email) return send(res, 404, { error: "The staff Auth account could not be found." });
+      if (invitedUser.email_confirmed_at) {
+        return send(res, 409, { error: "This account has already accepted an invitation. Ask the staff member to use Forgot password on the login screen." });
+      }
+
+      const resendUrl = new URL(`${baseUrl}/auth/v1/resend`);
+      resendUrl.searchParams.set("redirect_to", appUrl);
+      const resendResponse = await fetch(resendUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ type: "signup", email: invitedUser.email }),
+      });
+      const resendResult = await resendResponse.json().catch(() => ({}));
+      if (!resendResponse.ok) {
+        return send(res, resendResponse.status || 502, {
+          error: resendResult.msg || resendResult.message || "Could not resend the staff setup email.",
+        });
+      }
+      return send(res, 200, { ok: true, email: invitedUser.email });
+    }
+
     const inviteUrl = new URL(`${baseUrl}/auth/v1/invite`);
-    if (process.env.APP_URL) inviteUrl.searchParams.set("redirect_to", process.env.APP_URL);
+    inviteUrl.searchParams.set("redirect_to", appUrl);
     const inviteResponse = await fetch(inviteUrl, {
       method: "POST",
       headers,

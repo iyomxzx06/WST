@@ -47,12 +47,14 @@ The publishable key is browser-visible and relies on RLS. Never put a Supabase s
 2. The root URL and `/index.html` redirect to `/restaurant-system/`; the modular app is served there and `/api/staff` remains the serverless staff-invitation endpoint.
 3. Add these server-only Vercel Environment Variables for staff invitations:
    - `SUPABASE_URL`: the Supabase project URL.
-   - `SUPABASE_SERVICE_ROLE_KEY`: the service-role key; keep it only in Vercel's server-side environment.
+   - `SUPABASE_SERVICE_ROLE_KEY`: the legacy `service_role` JWT key (typically starts with `eyJ`); keep it only in Vercel's server-side environment. Do not use the browser publishable key or an `sb_secret_...` key here.
    - `APP_URL`: the deployed modular application URL, such as `https://your-site.vercel.app/restaurant-system/`.
 4. In Supabase **Authentication → URL Configuration**, set the deployed site URL and allow the deployed modular application URL as a redirect URL for staff invitation emails.
 5. Redeploy after changing Vercel environment variables.
 
 The Owner/Admin account can invite staff from **Staff & access**. The server endpoint validates the caller's active Owner/Admin profile before sending an invitation and assigning a non-admin role.
+
+Invitation links open the deployed application so the staff member can set a password. If a pending invitation expires, use **Resend invite** beside that staff account; do not submit the same email in the new-staff form. Accepted staff can request a password reset from the login screen using **Forgot password?**. Both links return to the password setup form.
 
 Staff invitations cannot be sent from a `file://` local preview; use the deployed Vercel URL.
 

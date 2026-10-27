@@ -35,6 +35,12 @@ function shiftDateString(dateString,days){
 let client=null,clientConfig=null,profile=null,activePage='overview',cart=new Map(),products=[],ingredients=[],suppliers=[],realtimeChannel=null,realtimeTimer=0;
 let checkoutAttempt={signature:'',key:''};
 let catalogAutoImportInProgress=false;
+const authCallbackParams=new URLSearchParams(window.location.hash.slice(1));
+const authQueryParams=new URLSearchParams(window.location.search);
+const authCallbackType=authCallbackParams.get('type')||authQueryParams.get('type');
+const authCallbackError=authCallbackParams.get('error_description')||authQueryParams.get('error_description');
+const authCallbackErrorCode=authCallbackParams.get('error_code')||authQueryParams.get('error_code');
+const needsPasswordSetup=['invite','signup','recovery'].includes(authCallbackType);
 
 function showMessage(id,message,isError=true){
  const node=$(id);if(!node)return;
@@ -54,6 +60,19 @@ function loadConfig(){
  catch{return {};}
 }
 function dbError(error){throw new Error(error?.message||'The database request failed.');}
+function clearAuthCallback(){
+ const url=new URL(window.location.href);
+ ['code','type','error','error_code','error_description'].forEach(key=>url.searchParams.delete(key));
+ url.hash='';
+ window.history.replaceState(null,'',url.pathname+url.search);
+}
+function showPasswordSetup(message=''){
+ $('loginScreen').classList.add('hidden');
+ $('bootstrapScreen').classList.add('hidden');
+ $('appScreen').classList.add('hidden');
+ $('passwordSetupScreen').classList.remove('hidden');
+ showMessage('passwordSetupMessage',message,false);
+}
 async function getProfile(userId){
  const {data,error}=await client.from('staff_profiles')
   .select('user_id,business_id,branch_id,display_name,role,active')
@@ -117,6 +136,39 @@ async function onLogin(event){
   $('password').value='';
   await resolveSignedInUser(data.user);
  }catch(error){showMessage('loginMessage',error.message||'Sign-in failed.');}
+ finally{button.disabled=false;}
+}
+async function onPasswordSetup(event){
+ event.preventDefault();
+ showMessage('passwordSetupMessage','');
+ const password=$('newPassword').value;
+ if(password.length<8){showMessage('passwordSetupMessage','Use a password with at least 8 characters.');return;}
+ if(password!==$('confirmPassword').value){showMessage('passwordSetupMessage','The passwords do not match.');return;}
+ const button=$('passwordSetupForm').querySelector('button[type="submit"]');
+ button.disabled=true;
+ try{
+  const {data,error}=await client.auth.updateUser({password});
+  if(error)dbError(error);
+  if(!data.user)throw new Error('Password was saved, but the account could not be loaded. Sign in with your new password.');
+  clearAuthCallback();
+  $('newPassword').value='';$('confirmPassword').value='';
+  await resolveSignedInUser(data.user);
+ }catch(error){showMessage('passwordSetupMessage',error.message||'Could not save your password.');}
+ finally{button.disabled=false;}
+}
+async function onForgotPassword(){
+ showMessage('loginMessage','');
+ if(!client){showMessage('loginMessage','Supabase is not configured. Refresh the page and check the app setup.');return;}
+ const email=$('email').value.trim();
+ if(!email){showMessage('loginMessage','Enter your staff email first.');$('email').focus();return;}
+ const button=$('forgotPasswordButton');
+ button.disabled=true;
+ try{
+  const redirectTo=new URL('./',window.location.href).toString();
+  const {error}=await client.auth.resetPasswordForEmail(email,{redirectTo});
+  if(error)dbError(error);
+  showMessage('loginMessage','If an account exists for that email, a password reset link will be sent.',false);
+ }catch(error){showMessage('loginMessage',error.message||'Could not send a password reset link.');}
  finally{button.disabled=false;}
 }
 async function onBootstrap(event){
@@ -512,9 +564,27 @@ async function renderStaff(){
   <div class="grid two-col staff-layout"><section class="panel module-panel"><div class="module-form-heading"><span class="module-form-icon">＋</span><div><h2>Invite staff member</h2><p>Choose the access needed for their role.</p></div></div><form id="staffForm" class="staff-form"><label>Staff name</label><input name="display_name" maxlength="120" autocomplete="name" required><label>Email</label><input name="email" type="email" autocomplete="off" required><label>Role</label><select name="role"><option value="manager">Manager</option><option value="cashier">Cashier</option><option value="kitchen">Kitchen</option><option value="inventory">Inventory / Purchasing</option></select><button class="primary wide">Send invitation</button></form><p class="hint staff-security-note">Owner/Admin access cannot be assigned from this form. Keep the service-role key server-side only.</p></section>
   <section class="panel module-panel"><div class="section-heading"><div><h2>Role access</h2><p>Access is limited by each staff member's role.</p></div></div><div class="role-guide"><div><span class="role-guide-mark role-admin">A</span><span><b>Owner / Admin</b><small>Business setup and all enabled modules</small></span></div><div><span class="role-guide-mark role-manager">M</span><span><b>Manager</b><small>Operations, purchasing, expenses, reports</small></span></div><div><span class="role-guide-mark role-cashier">C</span><span><b>Cashier</b><small>POS and kitchen order status</small></span></div><div><span class="role-guide-mark role-kitchen">K</span><span><b>Kitchen</b><small>Kitchen tickets and status</small></span></div><div><span class="role-guide-mark role-inventory">I</span><span><b>Inventory / Purchasing</b><small>Stock and supplier orders</small></span></div></div><div class="staff-list-heading"><h2>Staff accounts</h2><span class="pill">${(data||[]).length}</span></div><div class="table-wrap">${staffTable(data||[])}</div></section></div>`;
  $('staffForm').addEventListener('submit',createStaff);
+ $('pageContent').querySelectorAll('[data-resend-invite]').forEach(button=>button.addEventListener('click',()=>resendStaffInvite(button)));
 }
 function staffTable(rows){
- return rows.length?`<table><thead><tr><th>Name</th><th>Role</th><th>Status</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${esc(row.display_name)}</td><td>${esc(ROLE_LABELS[row.role]||row.role)}</td><td><span class="pill ${row.active?'green':'red'}">${row.active?'Active':'Inactive'}</span></td></tr>`).join('')}</tbody></table>`:'<div class="empty">No staff profiles found.</div>';
+ return rows.length?`<table><thead><tr><th>Name</th><th>Role</th><th>Status</th><th>Invite</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${esc(row.display_name)}</td><td>${esc(ROLE_LABELS[row.role]||row.role)}</td><td><span class="pill ${row.active?'green':'red'}">${row.active?'Active':'Inactive'}</span></td><td>${row.role==='owner_admin'?'—':`<button class="secondary actions-button" type="button" data-resend-invite="${esc(row.user_id)}">Resend invite</button>`}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">No staff profiles found.</div>';
+}
+async function resendStaffInvite(button){
+ const userId=button.dataset.resendInvite;
+ button.disabled=true;
+ try{
+  const {data:{session},error:sessionError}=await client.auth.getSession();
+  if(sessionError||!session)throw new Error('Your sign-in expired. Sign in again.');
+  const response=await fetch('/api/staff',{
+   method:'POST',
+   headers:{'Content-Type':'application/json',Authorization:`Bearer ${session.access_token}`},
+   body:JSON.stringify({action:'resend',user_id:userId})
+  });
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(result.error||'Could not resend the staff invitation.');
+  appMessage(`A new setup email was sent to ${result.email}. The previous link will no longer be needed.`,false);
+ }catch(error){appMessage(error.message||'Could not resend the staff invitation.');}
+ finally{button.disabled=false;}
 }
 async function createStaff(event){
  event.preventDefault();const values=Object.fromEntries(new FormData(event.currentTarget));
@@ -586,12 +656,31 @@ async function initialize(){
  client=window.supabase.createClient(config.url,config.key);
  clientConfig={url:config.url,key:config.key};
  try{
+  if(authCallbackError){
+   clearAuthCallback();
+   const message=authCallbackErrorCode==='otp_expired'
+    ?'This email link expired. Ask the Owner/Admin to select Resend invite beside your staff account, then open the newest email.'
+    :authCallbackError;
+   showMessage('loginMessage',message);
+   return;
+  }
   const {data,error}=await client.auth.getSession();
   if(error)dbError(error);
+  if(data.session&&needsPasswordSetup){
+   clearAuthCallback();
+   showPasswordSetup();
+   return;
+  }
   if(data.session)await resolveSignedInUser(data.session.user);
+  else if(needsPasswordSetup){
+   clearAuthCallback();
+   showMessage('loginMessage','This setup link is invalid or expired. Ask the Owner/Admin to send a new invite or request a password reset.');
+  }
  }catch(error){showMessage('loginMessage',error.message||'Could not restore your sign-in.');}
 }
 $('loginForm').addEventListener('submit',onLogin);
+$('passwordSetupForm').addEventListener('submit',onPasswordSetup);
+$('forgotPasswordButton').addEventListener('click',onForgotPassword);
 $('bootstrapForm').addEventListener('submit',onBootstrap);
 $('cancelBootstrap').addEventListener('click',signOut);
 $('signOutButton').addEventListener('click',signOut);

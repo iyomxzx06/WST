@@ -24,7 +24,25 @@
         <button class="primary wide" type="submit">Sign in</button>
       </form>
       <p id="loginMessage" class="message" role="status"></p>
+      <button id="forgotPasswordButton" class="text-button" type="button">Forgot password?</button>
       <p class="hint">First setup is limited to the Owner/Admin email allowlisted in the database. Staff accounts must be invited.</p>
+    </section>
+  </main>
+
+  <main id="passwordSetupScreen" class="login-wrap hidden">
+    <section class="login-card">
+      <div class="brand-mark">HB</div>
+      <p class="eyebrow">ACCOUNT SETUP</p>
+      <h1>Set your password</h1>
+      <p class="muted">Choose a password to finish setting up your staff account.</p>
+      <form id="passwordSetupForm">
+        <label for="newPassword">New password</label>
+        <input id="newPassword" type="password" autocomplete="new-password" minlength="8" required>
+        <label for="confirmPassword">Confirm password</label>
+        <input id="confirmPassword" type="password" autocomplete="new-password" minlength="8" required>
+        <button class="primary wide" type="submit">Save password</button>
+      </form>
+      <p id="passwordSetupMessage" class="message" role="status"></p>
     </section>
   </main>
 
