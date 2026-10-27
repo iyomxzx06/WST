@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101820">
+  <title>Havens Restaurant System</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="../supabase-config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <main id="loginScreen" class="login-wrap">
+    <section class="login-card">
+      <div class="brand-mark">HB</div>
+      <p class="eyebrow">HAVENS BURGER</p>
+      <h1>Restaurant system</h1>
+      <p class="muted">Sign in with your staff account.</p>
+      <form id="loginForm">
+        <label for="email">Staff email</label>
+        <input id="email" type="email" autocomplete="username" required>
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" required>
+        <button class="primary wide" type="submit">Sign in</button>
+      </form>
+      <p id="loginMessage" class="message" role="status"></p>
+      <p class="hint">First setup is limited to the Owner/Admin email allowlisted in the database. Staff accounts must be invited.</p>
+    </section>
+  </main>
+
+  <main id="bootstrapScreen" class="login-wrap hidden">
+    <section class="login-card">
+      <div class="brand-mark">HB</div>
+      <p class="eyebrow">FIRST-TIME SETUP</p>
+      <h1>Create your business</h1>
+      <p class="muted">Only the allowlisted initial Owner/Admin account can complete this step.</p>
+      <form id="bootstrapForm">
+        <label for="businessName">Business name</label>
+        <input id="businessName" value="Havens Burger" required>
+        <label for="branchName">Branch name</label>
+        <input id="branchName" value="Main Branch" required>
+        <label for="ownerName">Your name</label>
+        <input id="ownerName" autocomplete="name" required>
+        <button class="primary wide" type="submit">Create business</button>
+      </form>
+      <p id="bootstrapMessage" class="message" role="status"></p>
+      <button id="cancelBootstrap" class="wide secondary" type="button">Sign out</button>
+    </section>
+  </main>
+
+  <div id="appScreen" class="app hidden">
+    <aside id="sidebar" class="sidebar">
+      <div class="side-brand"><span class="brand-mark small-mark">HB</span><div><b>Havens</b><small>Restaurant system</small></div></div>
+      <div id="branchLabel" class="branch-label"></div>
+      <nav id="mainNav" class="main-nav" aria-label="Main navigation"></nav>
+      <div class="side-bottom">
+        <div id="staffLabel" class="staff-label"></div>
+        <button id="signOutButton" class="secondary wide" type="button">Sign out</button>
+      </div>
+    </aside>
+    <section class="workspace">
+      <header class="topbar">
+        <button id="menuToggle" class="icon-button" type="button" aria-label="Open menu">☰</button>
+        <div><p class="eyebrow">HAVENS BURGER</p><h1 id="pageTitle">Overview</h1></div>
+        <span id="roleBadge" class="role-badge"></span>
+      </header>
+      <div id="appMessage" class="app-message hidden" role="status"></div>
+      <main id="pageContent" class="page-content"></main>
+    </section>
+  </div>
+
+  <dialog id="dialog">
+    <form method="dialog" class="dialog-head"><h2 id="dialogTitle"></h2><button class="icon-button" aria-label="Close">×</button></form>
+    <div id="dialogContent" class="dialog-content"></div>
+  </dialog>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

@@ -1,0 +1,1275 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Havens Burger POS v12</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden}
+:root{--bg:#0d1117;--panel:#161b22;--panel2:#21262d;--border:#30363d;--text:#e6edf3;--muted:#9da7b3;--primary:#FF6B35;--secondary:#1f6feb;--success:#1DB88D;--danger:#E63946;--warning:#F77F00;--shadow:0 4px 14px rgba(0,0,0,.35)}
+[data-theme=light]{--bg:#f3f4f6;--panel:#ffffff;--panel2:#eceff3;--border:#d0d7de;--text:#1f2328;--muted:#59636e;--shadow:0 2px 8px rgba(0,0,0,.12)}
+body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);font-size:15px}
+.hidden{display:none!important}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+button{font:inherit;font-weight:700;border:none;border-radius:12px;padding:10px 14px;min-height:44px;cursor:pointer;color:var(--text);background:var(--panel2);touch-action:manipulation;user-select:none;-webkit-user-select:none;display:inline-flex;align-items:center;justify-content:center;gap:6px;text-align:center;line-height:1.2}
+button:active{transform:scale(.96)}
+button:disabled{opacity:.5}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-secondary{background:var(--secondary);color:#fff}
+.btn-success{background:var(--success);color:#fff}
+.btn-danger{background:var(--danger);color:#fff}
+.btn-warning{background:var(--warning);color:#fff}
+.btn-sm{min-height:36px;padding:6px 10px;font-size:13px;border-radius:9px}
+.wide{width:100%;margin-top:10px}
+input,select,textarea{font:inherit;font-size:16px;width:100%;padding:11px 12px;border:2px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);min-height:44px}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary)}
+textarea{resize:vertical;min-height:60px}
+label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin:8px 0 4px}
+h2{font-size:19px;margin-bottom:10px}
+h3{font-size:16px;margin:0 0 10px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0}
+.row.big{font-size:20px;font-weight:800}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:var(--shadow)}
+
+/* login */
+.login{position:fixed;inset:0;background:linear-gradient(135deg,var(--primary),#004E89);display:flex;align-items:center;justify-content:center;z-index:5000;padding:16px}
+.login-box{background:var(--panel);border:1px solid var(--border);border-radius:20px;padding:30px 24px;width:100%;max-width:340px;max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow-y:auto;text-align:center;box-shadow:var(--shadow)}
+.login-box .logo{font-size:52px}
+.login-box h1{font-size:26px;color:var(--primary);margin:4px 0 2px}
+.login-box input{margin:16px 0 4px;text-align:center;letter-spacing:6px;font-size:22px}
+
+/* layout */
+#app{display:flex;flex-direction:column;height:100vh;height:100dvh}
+.topbar{background:linear-gradient(135deg,#004E89,#003d6b);color:#fff;padding:10px 12px;display:flex;align-items:center;gap:8px;flex-shrink:0;padding-top:max(10px,env(safe-area-inset-top))}
+.topbar .info{flex:1;min-width:0}
+.topbar .t1{font-weight:800;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topbar .t2{font-size:12px;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topbar button{background:rgba(255,255,255,.18);color:#fff;min-height:40px;padding:6px 12px;font-size:13px}
+.topbar button.go{background:var(--success)}
+.topbar button.stop{background:var(--warning)}
+#main{flex:1;overflow-y:auto;padding:12px 12px 190px;-webkit-overflow-scrolling:touch}
+.tab{display:none}.tab.active{display:block}
+.nav{position:fixed;left:0;right:0;bottom:0;height:calc(66px + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);background:var(--panel);border-top:2px solid var(--border);display:flex;z-index:100}
+.nav button{flex:1;border-radius:0;background:none;flex-direction:column;gap:2px;font-size:12px;color:var(--muted);min-height:0;border-top:3px solid transparent}
+.nav button .ic{font-size:21px}
+.nav button.active{color:var(--primary);border-top-color:var(--primary)}
+.cartbar{position:fixed;left:8px;right:8px;bottom:calc(74px + env(safe-area-inset-bottom));background:var(--panel);border:2px solid var(--primary);border-radius:16px;padding:10px;z-index:90;box-shadow:var(--shadow-lg,0 8px 24px rgba(0,0,0,.45));display:flex;flex-direction:column;gap:8px}
+.cartbar .top{display:flex;justify-content:space-between;align-items:center;font-weight:800}
+.cartbar .top .tot{font-size:22px;color:var(--primary)}
+.cartbar .bot{display:flex;gap:8px}
+.cartbar .bot .seg{flex:0 0 46%}
+.cartbar .bot .charge{flex:1}
+
+.seg{display:flex;gap:6px}
+.seg button{flex:1;background:var(--panel2);color:var(--text)}
+.seg button.on{background:var(--primary);color:#fff}
+.seg button.on.gc{background:#1a6dff}
+.seg button.on.ok{background:var(--success)}
+
+/* menu */
+.menu-card{background:var(--panel2);border-radius:12px;padding:10px;margin-bottom:8px}
+.menu-name{font-weight:800;margin-bottom:6px}
+.menu-card button{flex-direction:column;min-height:56px}
+.menu-card button b{font-size:17px}
+.alt{background:var(--secondary)!important}
+.extra-btn{flex-direction:column;background:var(--panel2);min-height:56px}
+.extra-btn small{color:var(--muted);font-weight:600}
+
+/* banners */
+.banner{padding:10px 12px;border-radius:12px;margin-bottom:10px;font-size:14px;font-weight:600;border-left:5px solid var(--warning);background:rgba(247,127,0,.14)}
+.banner.red{border-left-color:var(--danger);background:rgba(230,57,70,.14)}
+.banner.green{border-left-color:var(--success);background:rgba(29,184,141,.14)}
+.banner button{margin-top:8px}
+
+/* stats */
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stat{background:var(--panel2);border-radius:12px;padding:12px;text-align:center}
+.stat .v{font-size:21px;font-weight:800}
+.stat .l{font-size:12px;color:var(--muted);font-weight:600;margin-top:2px}
+.stock-line{display:flex;justify-content:space-between;padding:8px 0;font-weight:600;border-bottom:1px solid var(--border)}
+.stock-line:last-child{border:none}
+.stock-line .n{font-size:20px;font-weight:800;color:var(--success)}
+.stock-line .n.low{color:var(--danger)}
+table{width:100%;border-collapse:collapse;font-size:14px}
+td,th{padding:7px 4px;border-bottom:1px solid var(--border);text-align:left}
+th{color:var(--muted);font-size:12px}
+td.r,th.r{text-align:right}
+
+/* orders */
+.chips{display:flex;gap:6px;overflow-x:auto;margin:10px 0;padding-bottom:2px}
+.chips button{flex:0 0 auto;min-height:38px;font-size:13px;padding:6px 12px;border-radius:20px}
+.chips button.on{background:var(--primary);color:#fff}
+.order{background:var(--panel2);border-left:5px solid var(--warning);border-radius:12px;padding:12px;margin-bottom:10px}
+.order.Served{border-left-color:var(--success)}
+.order.Void{border-left-color:var(--danger);opacity:.75}
+.order .hd{display:flex;justify-content:space-between;align-items:center;font-weight:800;font-size:16px}
+.badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:12px;font-weight:700;margin:4px 4px 4px 0}
+.badge.Pending{background:rgba(247,127,0,.22);color:var(--warning)}
+.badge.Served{background:rgba(29,184,141,.22);color:var(--success)}
+.badge.Void{background:rgba(230,57,70,.22);color:var(--danger)}
+.badge.t{background:var(--border);color:var(--text)}
+.order .items{font-size:14px;margin:4px 0}
+.order .meta{font-size:12px;color:var(--muted);margin-top:2px}
+.order .acts{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.order .acts button{flex:1}
+
+/* subtabs */
+.subtabs{display:flex;gap:6px;overflow-x:auto;margin-bottom:12px}
+.subtabs button{flex:0 0 auto;min-height:40px;font-size:14px;padding:6px 14px;border-radius:20px}
+.subtabs button.on{background:var(--primary);color:#fff}
+.sub{display:none}.sub.active{display:block}
+
+/* cart / checkout lines */
+.line{background:var(--panel2);border-radius:10px;padding:8px 10px;margin-bottom:6px;display:flex;align-items:center;gap:8px}
+.line .nm{flex:1;min-width:0}
+.line .nm b{display:block;font-size:14px}
+.line .nm span{font-size:12px;color:var(--muted)}
+.line .qty{display:flex;align-items:center;gap:4px}
+.line .qty button{min-width:36px;min-height:36px;padding:0}
+.line .qty span{min-width:22px;text-align:center;font-weight:800}
+.line input[type=checkbox]{width:22px;height:22px;min-height:0;flex:0 0 auto}
+.tend-quick{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+.tend-quick button{min-height:38px;padding:6px 12px;font-size:14px}
+.change{padding:12px;border-radius:12px;text-align:center;font-size:20px;font-weight:800;margin-top:8px}
+.change.ok{background:rgba(29,184,141,.18);color:var(--success)}
+.change.short{background:rgba(230,57,70,.18);color:var(--danger)}
+.bigchange{text-align:center;padding:18px 0}
+.bigchange .amt{font-size:46px;font-weight:900;color:var(--success)}
+.bigchange .q{font-size:20px;font-weight:800;margin-top:6px}
+.mrow{background:var(--panel2);border-radius:12px;padding:10px;margin-bottom:10px}
+.mrow>input{margin-bottom:6px}
+.mrow button{margin-top:8px}
+.audit-item{font-size:12px;padding:6px 0;border-bottom:1px solid var(--border);word-break:break-word}
+
+/* overlays */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:flex-end;justify-content:center;z-index:1000}
+.overlay.active{display:flex}
+.overlay.top{z-index:2000;align-items:center;padding:16px}
+.sheet{background:var(--panel);border:1px solid var(--border);border-radius:18px 18px 0 0;width:100%;max-width:560px;max-height:94vh;max-height:94dvh;display:flex;flex-direction:column}
+.sheet-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--border)}
+.sheet-head h2{margin:0;font-size:18px}
+.sheet-head .x{min-height:36px;width:36px;padding:0;border-radius:50%;background:var(--danger);color:#fff}
+.sheet-body{padding:14px 16px;overflow-y:auto;flex:1}
+.sheet-foot{padding:12px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--border);gap:8px}
+.sheet-foot button{flex:1}
+.cdlg{background:var(--panel);border:2px solid var(--danger);border-radius:16px;padding:22px;width:100%;max-width:380px;text-align:center}
+.cdlg h3{color:var(--danger);font-size:18px}
+.cdlg p{color:var(--muted);margin:10px 0 18px;line-height:1.45;font-size:14px}
+.cdlg .b{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+#toasts{position:fixed;top:10px;left:10px;right:10px;z-index:3000;pointer-events:none}
+.toast{background:var(--panel);border:1px solid var(--border);border-left:5px solid var(--success);padding:11px 14px;border-radius:10px;margin-bottom:8px;box-shadow:var(--shadow);font-weight:600;font-size:14px;animation:in .2s}
+.toast.error{border-left-color:var(--danger)}
+@keyframes in{from{transform:translateY(-14px);opacity:0}to{transform:none;opacity:1}}
+@media(min-width:700px){#main{max-width:720px;margin:0 auto;width:100%}.cartbar{max-width:704px;left:50%;right:auto;width:calc(100% - 16px);transform:translateX(-50%)}.overlay{align-items:center}.sheet{border-radius:18px}}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login" class="login">
+ <div id="cloudLogin" class="login-box">
+  <div class="logo">🍔</div>
+  <h1>Connect to your database</h1>
+  <div class="muted small">Project details are configured once for this app. Sign in with the Supabase account connected to your old POS. After connecting, use your usual POS PIN.</div>
+  <label for="supabaseEmail">Supabase account email</label>
+  <input type="email" id="supabaseEmail" autocomplete="username" placeholder="you@example.com">
+  <label for="supabasePassword">Supabase account password</label>
+  <input type="password" id="supabasePassword" autocomplete="current-password" onkeydown="if(event.key==='Enter')connectSupabase()">
+  <button class="btn-primary wide" id="connectButton" onclick="connectSupabase()">Connect</button>
+  <div id="cloudMessage" class="muted small" style="margin-top:12px"></div>
+ </div>
+ <div id="pinLogin" class="login-box hidden">
+  <div class="logo">🍔</div>
+  <h1>Havens Burger</h1>
+  <div class="muted small">POS v12</div>
+  <input type="password" id="pinInput" inputmode="numeric" autocomplete="off" placeholder="PIN" onkeydown="if(event.key==='Enter')login()">
+  <button class="btn-primary wide" onclick="login()">Log in</button>
+  <div class="muted small" style="margin-top:14px">First time? Default PINs: Admin 1234, Cashier 5678.<br>Change them in Reports → Admin.</div>
+  <button class="wide" onclick="switchSupabaseAccount()">Use another Supabase account</button>
+ </div>
+</div>
+
+<div id="app" class="hidden">
+ <div class="topbar">
+  <div class="info"><div class="t1" id="shiftInfo"></div><div class="t2" id="shiftSub"></div></div>
+  <button id="shiftBtn" onclick="shiftButton()"></button>
+  <button onclick="toggleTheme()" aria-label="Toggle theme" id="themeBtn">☀</button>
+  <button onclick="logoutAsk()" aria-label="Log out">⎋</button>
+ </div>
+
+ <div id="main">
+  <!-- DASHBOARD -->
+  <section id="tab-dashboard" class="tab active">
+   <div id="dbBanners"></div>
+   <div class="card"><h2>📊 Today</h2><div id="dbStats"></div></div>
+   <div class="card"><h3>📦 Stock</h3><div id="dbStock"></div></div>
+   <div class="card admin-only">
+    <h3>🔧 Set opening stock (Admin)</h3>
+    <div class="grid-2">
+     <div><label>Buns</label><input type="number" inputmode="numeric" id="openBuns" min="0" placeholder="0"></div>
+     <div><label>Patties</label><input type="number" inputmode="numeric" id="openPatties" min="0" placeholder="0"></div>
+    </div>
+    <button class="btn-success wide" onclick="openingAsk()">Set opening stock</button>
+    <div class="muted small" style="margin-top:6px">Use your physical count at opening. This replaces the current stock figure.</div>
+   </div>
+   <div class="card">
+    <h3>🚚 Restock</h3>
+    <div class="grid-2">
+     <div><label>Buns to add</label><input type="number" inputmode="numeric" id="restBuns" min="0" placeholder="0"></div>
+     <div><label>Patties to add</label><input type="number" inputmode="numeric" id="restPatties" min="0" placeholder="0"></div>
+    </div>
+    <button class="btn-warning wide" onclick="restockAsk()">Add restock</button>
+    <h4 style="margin:14px 0 6px;font-size:14px;color:var(--muted)">Today's restocks</h4>
+    <div id="restockList"></div>
+   </div>
+  </section>
+
+  <!-- ORDER -->
+  <section id="tab-order" class="tab">
+   <div class="card"><h3>🍔 Burgers</h3><div id="menuBurgers"></div></div>
+   <div class="card"><h3>➕ Extras</h3><div id="menuExtras" class="grid-3"></div></div>
+  </section>
+
+  <!-- MEALS -->
+  <section id="tab-meals" class="tab">
+   <div class="card">
+    <h3>🍽 Employee meal</h3>
+    <label>Name</label>
+    <input type="text" id="mealName" list="mealNames" placeholder="Employee name" autocomplete="off">
+    <datalist id="mealNames"></datalist>
+    <label>Burger</label>
+    <select id="mealType"></select>
+    <button class="btn-warning wide" onclick="logMeal(false)">Log meal</button>
+    <div class="muted small" style="margin-top:6px">One meal per employee per day. Meals use stock but are not sales.</div>
+    <h4 style="margin:14px 0 6px;font-size:14px;color:var(--muted)">Today</h4>
+    <div id="mealsList"></div>
+   </div>
+  </section>
+
+  <!-- ORDERS -->
+  <section id="tab-orders" class="tab">
+   <div class="card">
+    <h3>🧾 Orders</h3>
+    <label>Date</label>
+    <input type="date" id="ordDate" onchange="renderOrders()">
+    <div class="chips" id="ordChips"></div>
+    <div id="ordersList"></div>
+   </div>
+  </section>
+
+  <!-- REPORTS -->
+  <section id="tab-reports" class="tab">
+   <div class="subtabs" id="subtabs"></div>
+   <div id="rp-cash" class="sub card"></div>
+   <div id="rp-stats" class="sub card"></div>
+   <div id="rp-audit" class="sub card"></div>
+   <div id="rp-admin" class="sub"></div>
+  </section>
+ </div>
+
+ <div id="cartBar" class="cartbar hidden"></div>
+
+ <div class="nav">
+  <button data-nav="dashboard" class="active" onclick="showTab('dashboard')"><span class="ic">🏠</span>Home</button>
+  <button data-nav="order" onclick="showTab('order')"><span class="ic">🍔</span>Order</button>
+  <button data-nav="meals" onclick="showTab('meals')"><span class="ic">🍽</span>Meals</button>
+  <button data-nav="orders" onclick="showTab('orders')"><span class="ic">🧾</span>Orders</button>
+  <button data-nav="reports" onclick="showTab('reports')"><span class="ic">📈</span>Reports</button>
+ </div>
+</div>
+
+<div id="modal" class="overlay">
+ <div class="sheet">
+  <div class="sheet-head"><h2 id="mTitle"></h2><button class="x" onclick="closeModal()" aria-label="Close">✕</button></div>
+  <div class="sheet-body" id="mBody"></div>
+  <div class="sheet-foot" id="mFoot"></div>
+ </div>
+</div>
+
+<div id="confirm" class="overlay top">
+ <div class="cdlg">
+  <h3 id="cTitle"></h3><p id="cMsg"></p>
+  <div class="b"><button onclick="confirmNo()">Cancel</button><button id="cYes" class="btn-danger" onclick="confirmYes()">Confirm</button></div>
+ </div>
+</div>
+
+<div id="toasts"></div>
+<input type="file" id="restoreFile" accept="application/json,.json" class="hidden" onchange="restoreFileChosen(this)">
+
+<script src="./supabase-config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+'use strict';
+/* =========================================================
+   Havens Burger POS v12
+   Local backup: localStorage (key hb_v12). Shared data: Supabase.
+   ========================================================= */
+const KEY='hb_v12', SNAP_KEY='hb_v12_snapshot', CORRUPT_KEY='hb_v12_corrupt', THEME_KEY='hb_theme';
+const SUPABASE_CONFIG_KEY='hb_supabase_config';
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const r2=n=>Math.round((Number(n)+Number.EPSILON)*100)/100;
+const peso=n=>{n=r2(n||0);const neg=n<0;n=Math.abs(n);const s=(n%1===0)?n.toLocaleString('en-PH'):n.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});return (neg?'-':'')+'₱'+s;};
+const pad=n=>String(n).padStart(2,'0');
+const dstr=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const today=()=>dstr(new Date());
+const tstr=ts=>new Date(ts).toLocaleTimeString('en-PH',{hour:'numeric',minute:'2-digit'});
+const dtstr=ts=>new Date(ts).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+const num=v=>{const n=parseFloat(v);return isNaN(n)?0:n;};
+const int=v=>{const n=parseInt(v,10);return isNaN(n)?0:n;};
+
+const DEFAULT_MENU={
+ burgers:[
+  {id:'classic',name:'Classic Burger',single:40,b1t1:75,patties:1},
+  {id:'cheese',name:'Cheese Burger',single:55,b1t1:105,patties:1},
+  {id:'deluxe',name:'Deluxe Burger',single:60,b1t1:115,patties:1},
+  {id:'double',name:'Double Cheese Burger',single:100,b1t1:195,patties:2}
+ ],
+ extras:[
+  {id:'onion',name:'Onion',price:5,patties:0},
+  {id:'lettuce',name:'Lettuce',price:10,patties:0},
+  {id:'tomato',name:'Tomato',price:10,patties:0},
+  {id:'sauce',name:'Sauce',price:10,patties:0},
+  {id:'slicecheese',name:'Slice Cheese',price:15,patties:0},
+  {id:'bacon',name:'Bacon',price:25,patties:0},
+  {id:'beefpatty',name:'Beef Patty',price:30,patties:1}
+ ]
+};
+function defaults(){
+ return{v:12,orders:[],meals:[],restocks:[],audit:[],closings:[],inv:{buns:0,patties:0},days:{},nextId:1,shift:null,session:null,lastBackup:null,
+  menu:JSON.parse(JSON.stringify(DEFAULT_MENU)),
+  settings:{vat:false,lowStock:10,business:'Havens Burger',pins:{admin:'1234',cashier:'5678'}}};
+}
+function merge(s){
+ const d=defaults();
+ Object.keys(s||{}).forEach(k=>{d[k]=s[k];});
+ const ds=defaults().settings;
+ d.settings=Object.assign(ds,(s&&s.settings)||{});
+ d.settings.pins=Object.assign({admin:'1234',cashier:'5678'},((s&&s.settings)||{}).pins||{});
+ if(!d.menu||!Array.isArray(d.menu.burgers)||!Array.isArray(d.menu.extras))d.menu=JSON.parse(JSON.stringify(DEFAULT_MENU));
+ ['orders','meals','restocks','audit','closings'].forEach(k=>{if(!Array.isArray(d[k]))d[k]=[];});
+ if(!d.inv)d.inv={buns:0,patties:0};
+ if(!d.days)d.days={};
+ return d;
+}
+let loadWarning='';
+function load(){
+ let raw=null;
+ try{raw=localStorage.getItem(KEY);}catch(e){}
+ if(!raw)return defaults();
+ try{return merge(JSON.parse(raw));}
+ catch(e){
+  try{localStorage.setItem(CORRUPT_KEY,raw);}catch(_){}
+  loadWarning='Saved data could not be read. A copy was kept under "'+CORRUPT_KEY+'". Starting empty.';
+  return defaults();
+ }
+}
+let DB=load();
+DB.session=null;
+let cloudClient=null,cloudUser=null,cloudReady=false,cloudTimer=null,cloudWrite=Promise.resolve();
+function setCloudMessage(message,isError){
+ const el=$('cloudMessage');
+ if(el){el.textContent=message;el.style.color=isError?'var(--danger)':'var(--muted)';}
+}
+function readSupabaseConfig(){
+ const configured=window.HAVENS_SUPABASE_CONFIG||{};
+ if(configured.url&&configured.publishableKey)return {url:configured.url,key:configured.publishableKey};
+ try{return JSON.parse(localStorage.getItem(SUPABASE_CONFIG_KEY)||'{}');}
+ catch(e){return {};}
+}
+function setupSupabaseClient(url,key){
+ if(!window.supabase||!window.supabase.createClient)throw new Error('Supabase library did not load. Check your internet connection and reload.');
+ cloudClient=window.supabase.createClient(url,key);
+}
+function cloudPayload(){
+ const data=Object.assign({},DB,{session:null});
+ return {user_id:cloudUser.id,state:data};
+}
+async function writeCloudState(){
+ const {error}=await cloudClient.from('pos_state').upsert(cloudPayload(),{onConflict:'user_id'});
+ if(error)throw error;
+}
+async function loadCloudState(){
+ cloudReady=false;
+ const {data,error}=await cloudClient.from('pos_state').select('state').maybeSingle();
+ if(error)throw error;
+ if(data&&data.state){
+  DB=merge(data.state);
+  DB.session=null;
+  try{localStorage.setItem(KEY,JSON.stringify(DB));}
+  catch(e){throw new Error('Cloud data loaded, but the local backup could not be updated: '+e.message);}
+ }else{
+  DB.session=null;
+  await writeCloudState();
+ }
+ cloudReady=true;
+}
+function scheduleCloudSave(){
+ if(!cloudReady)return;
+ clearTimeout(cloudTimer);
+ cloudTimer=setTimeout(()=>{
+  cloudWrite=cloudWrite.then(writeCloudState).catch(error=>{
+   toast('⚠ Cloud save failed: '+error.message,'error');
+  });
+ },250);
+}
+function save(){
+ try{localStorage.setItem(KEY,JSON.stringify(DB));return true;}
+ catch(e){toast('⚠ Could not save! Storage is full or blocked. Download a backup now.','error');return false;}
+ finally{scheduleCloudSave();}
+}
+try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist();}catch(e){}
+
+/* ---------- helpers ---------- */
+const isAdmin=()=>!!(DB.session&&DB.session.user==='Admin');
+function audit(action,details){
+ DB.audit.push({ts:Date.now(),user:DB.session?DB.session.user:'-',action,details:details||''});
+ if(DB.audit.length>3000)DB.audit.splice(0,DB.audit.length-3000);
+}
+function toast(msg,type){
+ const t=document.createElement('div');t.className='toast'+(type==='error'?' error':'');t.textContent=msg;
+ $('toasts').appendChild(t);setTimeout(()=>t.remove(),type==='error'?4500:2600);
+}
+function openModal(title,body,footer){
+ $('mTitle').textContent=title;$('mBody').innerHTML=body;
+ $('mFoot').innerHTML=footer||'';$('mFoot').style.display=footer?'flex':'none';
+ $('modal').classList.add('active');
+}
+function closeModal(){$('modal').classList.remove('active');coOpen=false;}
+let confirmFn=null;
+function confirmDlg(title,msg,fn,o){
+ o=o||{};confirmFn=fn;
+ $('cTitle').textContent=title;$('cMsg').innerHTML=msg;
+ $('cYes').textContent=o.yes||'Confirm';$('cYes').className=o.safe?'btn-primary':'btn-danger';
+ $('confirm').classList.add('active');
+}
+function confirmYes(){const f=confirmFn;confirmFn=null;$('confirm').classList.remove('active');if(f)f();}
+function confirmNo(){confirmFn=null;$('confirm').classList.remove('active');}
+function downloadFile(name,text,mime,bom){
+ const blob=new Blob([(bom?'\ufeff':'')+text],{type:mime});
+ const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;
+ document.body.appendChild(a);a.click();
+ setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1500);
+}
+function csvCell(c){
+ let s=String(c==null?'':c);
+ if(/^[=+\-@\t\r]/.test(s)&&isNaN(Number(s)))s="'"+s;
+ return '"'+s.replace(/"/g,'""')+'"';
+}
+function itemLabel(i){return i.name+(i.variant?' ('+i.variant+')':'');}
+
+/* ---------- theme ---------- */
+function applyTheme(){
+ let t='dark';try{t=localStorage.getItem(THEME_KEY)||'dark';}catch(e){}
+ document.documentElement.setAttribute('data-theme',t);
+ const b=$('themeBtn');if(b)b.textContent=t==='dark'?'☀':'🌙';
+}
+function toggleTheme(){
+ let t='dark';try{t=localStorage.getItem(THEME_KEY)||'dark';}catch(e){}
+ try{localStorage.setItem(THEME_KEY,t==='dark'?'light':'dark');}catch(e){}
+ applyTheme();
+}
+
+/* =========================================================
+   AUTH
+   ========================================================= */
+let fails=0,lockUntil=0;
+function login(){
+ if(Date.now()<lockUntil){toast('Too many tries. Wait '+Math.ceil((lockUntil-Date.now())/1000)+'s','error');return;}
+ const pin=$('pinInput').value.trim(),p=DB.settings.pins;
+ const user=pin&&pin===p.admin?'Admin':(pin&&pin===p.cashier?'Cashier':null);
+ if(!user){fails++;if(fails>=5){lockUntil=Date.now()+30000;fails=0;}toast('Invalid PIN','error');$('pinInput').value='';return;}
+ fails=0;DB.session={user};audit('LOGIN','Logged in');save();enterApp();
+}
+function showCloudLogin(message){
+ $('pinLogin').classList.add('hidden');$('cloudLogin').classList.remove('hidden');
+ $('login').classList.remove('hidden');$('app').classList.add('hidden');
+ if(message)setCloudMessage(message,true);
+}
+function showPinLogin(){
+ $('cloudLogin').classList.add('hidden');$('pinLogin').classList.remove('hidden');
+ $('login').classList.remove('hidden');$('app').classList.add('hidden');
+ $('pinInput').focus();
+}
+async function connectSupabase(){
+ const config=readSupabaseConfig(),email=$('supabaseEmail').value.trim(),password=$('supabasePassword').value;
+ if(!config.url||!config.key){setCloudMessage('Set the project URL and publishable key in WST/supabase-config.js first.',true);return;}
+ if(!email||!password){setCloudMessage('Enter your Supabase account email and password.',true);return;}
+ $('connectButton').disabled=true;setCloudMessage('Connecting…');
+ try{
+  setupSupabaseClient(config.url,config.key);
+  const {data,error}=await cloudClient.auth.signInWithPassword({email,password});
+  if(error)throw error;
+  cloudUser=data.user;
+  $('supabasePassword').value='';
+  await loadCloudState();
+  showPinLogin();
+  toast('Connected. Sign in with your POS PIN.');
+ }catch(error){
+  cloudReady=false;cloudUser=null;
+  setCloudMessage(error.message||'Could not connect to Supabase.',true);
+ }finally{$('connectButton').disabled=false;}
+}
+async function switchSupabaseAccount(){
+ try{if(cloudClient)await cloudClient.auth.signOut();}
+ catch(error){toast('Could not sign out of Supabase: '+error.message,'error');return;}
+ cloudReady=false;cloudUser=null;DB.session=null;showCloudLogin('Enter the Supabase account for this store.');
+}
+async function initializeSupabase(){
+ const config=readSupabaseConfig();
+ if(!config.url||!config.key){showCloudLogin('Set the project URL and publishable key in WST/supabase-config.js first.');return;}
+ setCloudMessage('Checking saved Supabase session…');
+ try{
+  setupSupabaseClient(config.url,config.key);
+  const {data,error}=await cloudClient.auth.getSession();
+  if(error)throw error;
+  if(!data.session){showCloudLogin('Enter your Supabase account email and password.');return;}
+  cloudUser=data.session.user;
+  await loadCloudState();
+  showPinLogin();
+ }catch(error){showCloudLogin('Could not load cloud data: '+error.message);}
+}
+function enterApp(){
+ $('login').classList.add('hidden');$('app').classList.remove('hidden');
+ $('pinInput').value='';
+ renderAll();showTab('dashboard');
+ if(loadWarning){toast(loadWarning,'error');loadWarning='';}
+}
+function logoutAsk(){
+ confirmDlg('Log out',DB.shift?'A shift is still open. It stays open for the next login.':'Log out now?',logout,{yes:'Log out',safe:true});
+}
+function logout(){
+ audit('LOGOUT','Logged out');DB.session=null;save();
+ $('app').classList.add('hidden');$('login').classList.remove('hidden');
+}
+
+/* =========================================================
+   TABS
+   ========================================================= */
+const TABS=['dashboard','order','meals','orders','reports'];
+let curTab='dashboard',curReport='cash';
+function showTab(t){
+ curTab=t;
+ TABS.forEach(x=>{
+  $('tab-'+x).classList.toggle('active',x===t);
+  document.querySelector('[data-nav="'+x+'"]').classList.toggle('active',x===t);
+ });
+ if(t==='dashboard')renderDashboard();
+ if(t==='orders')renderOrders();
+ if(t==='reports')renderReports();
+ if(t==='meals')renderMeals();
+ renderCartBar();
+ $('main').scrollTop=0;
+}
+function showReport(r){curReport=r;renderReports();}
+function applyRole(){
+ document.querySelectorAll('.admin-only').forEach(e=>e.classList.toggle('hidden',!isAdmin()));
+}
+function renderAll(){
+ renderHeader();renderDashboard();renderMenu();renderCartBar();renderMeals();renderOrders();renderReports();applyRole();applyTheme();
+}
+
+/* =========================================================
+   SHIFT
+   ========================================================= */
+function renderHeader(){
+ const s=DB.shift,u=DB.session?DB.session.user:'';
+ $('shiftInfo').textContent=(DB.settings.business||'Havens Burger')+' · '+u;
+ if(s){
+  const old=s.date!==today();
+  $('shiftSub').textContent='Shift open since '+(old?dtstr(s.start):tstr(s.start))+' ('+s.user+')'+(old?' ⚠ from earlier day':'');
+  $('shiftBtn').textContent='End shift';$('shiftBtn').className='stop';
+ }else{
+  $('shiftSub').textContent='No active shift';
+  $('shiftBtn').textContent='Start shift';$('shiftBtn').className='go';
+ }
+}
+function shiftButton(){DB.shift?endShiftDialog():startShiftDialog();}
+function startShiftDialog(){
+ const last=DB.closings.length?DB.closings[DB.closings.length-1].actual:'';
+ openModal('Start shift',
+  `<label>Opening cash in drawer (float) ₱</label>
+   <input type="number" inputmode="decimal" id="shFloat" min="0" placeholder="0" value="${esc(last)}">
+   <div class="muted small" style="margin-top:6px">Count the drawer. Expected cash at closing = float + cash sales.</div>`,
+  `<button onclick="closeModal()">Cancel</button><button class="btn-success" onclick="startShift()">Start shift</button>`);
+}
+function startShift(){
+ const f=num($('shFloat').value);
+ if(f<0){toast('Invalid amount','error');return;}
+ DB.shift={id:'S'+Date.now(),user:DB.session.user,start:Date.now(),float:r2(f),date:today()};
+ audit('SHIFT_START','Float '+peso(f));save();closeModal();renderAll();toast('Shift started');
+}
+function shiftOrders(){return DB.shift?DB.orders.filter(o=>o.shiftId===DB.shift.id&&o.status!=='Void'):[];}
+function shiftFigures(){
+ const os=shiftOrders();let cash=0,gcash=0,missing=0;
+ os.forEach(o=>{if(o.payment==='Cash')cash+=o.total;else{gcash+=o.total;if(!o.ref)missing++;}});
+ cash=r2(cash);gcash=r2(gcash);
+ const voids=DB.orders.filter(o=>o.shiftId===DB.shift.id&&o.status==='Void').length;
+ return{orders:os.length,cash,gcash,float:DB.shift.float,expected:r2(DB.shift.float+cash),missing,voids,total:r2(cash+gcash)};
+}
+function endShiftDialog(){
+ const f=shiftFigures();
+ const pending=DB.orders.filter(o=>o.shiftId===DB.shift.id&&o.status==='Pending').length;
+ openModal('End shift',
+  `${pending?`<div class="banner">⚠ ${pending} order(s) still marked Pending (not served).</div>`:''}
+   <div class="row"><span>Orders</span><b>${f.orders}</b></div>
+   <div class="row"><span>Cash sales</span><b>${peso(f.cash)}</b></div>
+   <div class="row"><span>GCash sales</span><b>${peso(f.gcash)}</b></div>
+   <div class="row"><span>Opening float</span><b>${peso(f.float)}</b></div>
+   <div class="row big"><span>Expected cash</span><span>${peso(f.expected)}</span></div>
+   <label>Actual cash counted ₱ (required)</label>
+   <input type="number" inputmode="decimal" id="shActual" min="0" placeholder="0" oninput="shiftDiff()">
+   <div id="shDiff"></div>
+   <h4 style="margin:14px 0 4px;font-size:14px">Physical stock count (optional)</h4>
+   <div class="muted small">System says: ${DB.inv.buns} buns, ${DB.inv.patties} patties</div>
+   <div class="grid-2">
+    <div><label>Buns left</label><input type="number" inputmode="numeric" id="shBuns" min="0"></div>
+    <div><label>Patties left</label><input type="number" inputmode="numeric" id="shPat" min="0"></div>
+   </div>
+   <label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="shSync" style="width:22px;height:22px;min-height:0" checked> Update system stock to my count</label>
+   <label>Notes</label><textarea id="shNote" placeholder="Anything unusual?"></textarea>`,
+  `<button onclick="closeModal()">Cancel</button><button class="btn-danger" onclick="closeShift()">Close shift</button>`);
+}
+function shiftDiff(){
+ const v=$('shActual').value;if(v===''){$('shDiff').innerHTML='';return;}
+ const d=r2(num(v)-shiftFigures().expected);
+ $('shDiff').innerHTML=d===0?'<div class="change ok">✔ Cash matches</div>':
+  (d>0?`<div class="change ok">Over by ${peso(d)}</div>`:`<div class="change short">Short by ${peso(-d)}</div>`);
+}
+function closeShift(){
+ const av=$('shActual').value;
+ if(av===''){toast('Enter the cash you counted','error');return;}
+ const actual=r2(num(av)),f=shiftFigures(),s=DB.shift;
+ const cb=$('shBuns').value,cp=$('shPat').value;
+ const rec={id:s.id,date:s.date,user:s.user,closedBy:DB.session.user,start:s.start,end:Date.now(),float:s.float,cash:f.cash,gcash:f.gcash,orders:f.orders,voids:f.voids,expected:f.expected,actual,diff:r2(actual-f.expected),
+  sysBuns:DB.inv.buns,sysPatties:DB.inv.patties,countedBuns:cb===''?null:int(cb),countedPatties:cp===''?null:int(cp),note:$('shNote').value.trim()};
+ if($('shSync').checked){
+  if(rec.countedBuns!==null)DB.inv.buns=rec.countedBuns;
+  if(rec.countedPatties!==null)DB.inv.patties=rec.countedPatties;
+ }
+ DB.closings.push(rec);DB.shift=null;
+ audit('SHIFT_END','Expected '+peso(rec.expected)+', actual '+peso(actual)+', diff '+peso(rec.diff));
+ save();renderAll();
+ openModal('Shift closed',
+  `<div class="bigchange"><div class="muted">Cash difference</div><div class="amt" style="color:${rec.diff===0?'var(--success)':(rec.diff>0?'var(--warning)':'var(--danger)')}">${rec.diff===0?'✔ Matched':peso(rec.diff)}</div></div>
+   <div class="row"><span>Expected</span><b>${peso(rec.expected)}</b></div>
+   <div class="row"><span>Counted</span><b>${peso(rec.actual)}</b></div>
+   <div class="banner green" style="margin-top:12px">Save your data now: download the CSV report and a backup.</div>`,
+  `<button onclick="downloadCSV('today')">⬇ CSV</button><button class="btn-primary" onclick="exportBackup(true)">💾 Backup</button>`);
+}
+
+/* =========================================================
+   INVENTORY
+   ========================================================= */
+function dayStats(date){
+ const os=DB.orders.filter(o=>o.date===date),ok=os.filter(o=>o.status!=='Void');
+ const s={orders:ok.length,voids:os.length-ok.length,cash:0,gcash:0,total:0,discount:0,vatEx:0,gross:0,served:0,best:{},byType:{},items:{},buns:0,patties:0};
+ ok.forEach(o=>{
+  s.total+=o.total;if(o.payment==='Cash')s.cash+=o.total;else s.gcash+=o.total;
+  s.discount+=o.discount||0;s.vatEx+=o.vatExempt||0;s.gross+=o.subtotal||0;
+  if(o.status==='Served')s.served++;
+  const t=o.orderType||'Dine-in';s.byType[t]=(s.byType[t]||0)+1;
+  o.items.forEach(i=>{
+   const k=itemLabel(i),it=s.items[k]||(s.items[k]={qty:0,rev:0});
+   it.qty+=i.qty;it.rev+=i.price*i.qty;
+   if(i.type==='burger')s.best[i.name]=(s.best[i.name]||0)+i.qty*(i.variant==='B1T1'?2:1);
+   s.buns+=(i.buns||0)*i.qty;s.patties+=(i.patties||0)*i.qty;
+  });
+ });
+ const ms=DB.meals.filter(m=>m.date===date);
+ ms.forEach(m=>{s.buns+=m.buns||0;s.patties+=m.patties||0;});
+ s.meals=ms.length;
+ ['cash','gcash','total','discount','vatEx','gross'].forEach(k=>s[k]=r2(s[k]));
+ let top='—',max=0;for(const k in s.best)if(s.best[k]>max){max=s.best[k];top=k;}
+ s.top=top;s.topQty=max;
+ return s;
+}
+function openingAsk(){
+ const b=int($('openBuns').value),p=int($('openPatties').value);
+ if(b<0||p<0){toast('Invalid numbers','error');return;}
+ if($('openBuns').value===''&&$('openPatties').value===''){toast('Enter buns and/or patties','error');return;}
+ confirmDlg('Set opening stock',`Buns: <b>${b}</b><br>Patties: <b>${p}</b><br><br>Replaces current stock (now ${DB.inv.buns} buns, ${DB.inv.patties} patties).`,()=>{
+  const prev={b:DB.inv.buns,p:DB.inv.patties};
+  DB.inv.buns=b;DB.inv.patties=p;
+  DB.days[today()]={buns:b,patties:p,by:DB.session.user,time:Date.now()};
+  audit('STOCK_OPEN','Buns '+prev.b+'→'+b+', Patties '+prev.p+'→'+p);save();
+  $('openBuns').value='';$('openPatties').value='';
+  renderDashboard();toast('Opening stock set');
+ },{safe:true,yes:'Set'});
+}
+function restockAsk(){
+ const b=int($('restBuns').value),p=int($('restPatties').value);
+ if(b<0||p<0){toast('Invalid numbers','error');return;}
+ if(b===0&&p===0){toast('Enter an amount to add','error');return;}
+ confirmDlg('Add restock',`Buns +${b}<br>Patties +${p}`,()=>{
+  DB.inv.buns+=b;DB.inv.patties+=p;
+  DB.restocks.push({date:today(),ts:Date.now(),buns:b,patties:p,by:DB.session.user});
+  audit('RESTOCK','+B '+b+' +P '+p);save();
+  $('restBuns').value='';$('restPatties').value='';
+  renderDashboard();toast('Restock added');
+ },{safe:true,yes:'Add'});
+}
+function stockOK(buns,patties){return DB.inv.buns>=buns&&DB.inv.patties>=patties;}
+function stockMsg(buns,patties){
+ const a=[];if(DB.inv.buns<buns)a.push('buns ('+DB.inv.buns+' left, need '+buns+')');
+ if(DB.inv.patties<patties)a.push('patties ('+DB.inv.patties+' left, need '+patties+')');
+ return 'Recorded stock is short on '+a.join(' and ')+'. Continue anyway? Stock will go negative until corrected.';
+}
+
+/* =========================================================
+   DASHBOARD
+   ========================================================= */
+function renderDashboard(){
+ if(!DB.session)return;
+ const t=today(),s=dayStats(t);
+ let b='';
+ if(!DB.shift)b+=`<div class="banner">No shift is open. Start a shift to take orders.</div>`;
+ if(!DB.days[t])b+=`<div class="banner">Opening stock not set for today.${isAdmin()?' Set it below.':' Ask the Admin to set it.'}</div>`;
+ const age=DB.lastBackup?(Date.now()-DB.lastBackup):Infinity;
+ if(DB.orders.length&&age>24*3600*1000){
+  b+=`<div class="banner red">${DB.lastBackup?'Last backup: '+dtstr(DB.lastBackup):'No backup yet.'} All data lives only on this device.${isAdmin()?`<br><button class="btn-primary btn-sm" onclick="exportBackup(true)">💾 Back up now</button>`:`<br><button class="btn-sm" onclick="downloadCSV('today')">⬇ Download CSV</button>`}</div>`;
+ }
+ $('dbBanners').innerHTML=b;
+ $('dbStats').innerHTML=`<div class="stat-grid">
+  <div class="stat"><div class="v">${s.orders}</div><div class="l">Orders${s.voids?' ('+s.voids+' void)':''}</div></div>
+  <div class="stat"><div class="v">${peso(s.total)}</div><div class="l">Total sales</div></div>
+  <div class="stat"><div class="v">${peso(s.cash)}</div><div class="l">Cash</div></div>
+  <div class="stat"><div class="v">${peso(s.gcash)}</div><div class="l">GCash</div></div>
+  <div class="stat"><div class="v" style="font-size:15px">${esc(s.top)}</div><div class="l">Top seller${s.topQty?' ('+s.topQty+')':''}</div></div>
+  <div class="stat"><div class="v">${s.meals}</div><div class="l">Staff meals</div></div></div>`;
+ const low=DB.settings.lowStock;
+ $('dbStock').innerHTML=`<div class="stock-line"><span>🍞 Buns</span><span class="n ${DB.inv.buns<low?'low':''}">${DB.inv.buns}</span></div>
+  <div class="stock-line"><span>🥩 Patties</span><span class="n ${DB.inv.patties<low?'low':''}">${DB.inv.patties}</span></div>
+  ${(DB.inv.buns<low||DB.inv.patties<low)?`<div class="banner red" style="margin:10px 0 0">⚠ Low stock (below ${low})</div>`:''}
+  ${DB.days[t]?`<div class="muted small" style="margin-top:8px">Opening today: ${DB.days[t].buns} buns, ${DB.days[t].patties} patties</div>`:''}`;
+ const rs=DB.restocks.filter(r=>r.date===t).slice().reverse();
+ $('restockList').innerHTML=rs.length?rs.map(r=>`<div class="row small"><span>${tstr(r.ts)} · ${esc(r.by||'')}</span><b>+${r.buns} buns · +${r.patties} patties</b></div>`).join(''):'<div class="muted small">None yet</div>';
+}
+
+/* =========================================================
+   MENU + CART
+   ========================================================= */
+let cart=[];try{cart=JSON.parse(sessionStorage.getItem('hb_cart')||'[]');}catch(e){cart=[];}
+function saveCart(){try{sessionStorage.setItem('hb_cart',JSON.stringify(cart));}catch(e){}}
+function freshCO(){return{pay:'Cash',type:'Dine-in',disc:'none',tendered:'',ref:'',dName:'',dId:'',notes:''};}
+let CO=freshCO(),coOpen=false,placing=false;
+
+function renderMenu(){
+ $('menuBurgers').innerHTML=DB.menu.burgers.map((b,i)=>`<div class="menu-card"><div class="menu-name">${esc(b.name)}</div>
+  <div class="grid-2"><button class="btn-primary" onclick="addBurger(${i},'Single')">Single<b>${peso(b.single)}</b></button>
+  <button class="btn-primary alt" onclick="addBurger(${i},'B1T1')">B1T1<b>${peso(b.b1t1)}</b></button></div></div>`).join('')||'<div class="muted">No burgers. Add some in Reports → Admin.</div>';
+ $('menuExtras').innerHTML=DB.menu.extras.map((e,i)=>`<button class="extra-btn" onclick="addExtra(${i})">${esc(e.name)}<small>${peso(e.price)}</small></button>`).join('');
+}
+function buzz(){try{if(navigator.vibrate)navigator.vibrate(12);}catch(e){}}
+function addBurger(i,variant){
+ const b=DB.menu.burgers[i];if(!b)return;
+ const m=variant==='B1T1'?2:1,key='B:'+b.id+':'+variant;
+ const f=cart.find(x=>x.key===key);
+ if(f)f.qty++;else cart.push({key,type:'burger',name:b.name,variant,price:variant==='B1T1'?b.b1t1:b.single,qty:1,buns:m,patties:b.patties*m,disc:true});
+ buzz();cartChanged();
+}
+function addExtra(i){
+ const e=DB.menu.extras[i];if(!e)return;
+ const key='E:'+e.id,f=cart.find(x=>x.key===key);
+ if(f)f.qty++;else cart.push({key,type:'extra',name:e.name,variant:'',price:e.price,qty:1,buns:0,patties:e.patties||0,disc:true});
+ buzz();cartChanged();
+}
+function chg(i,d){
+ if(!cart[i])return;cart[i].qty+=d;if(cart[i].qty<=0)cart.splice(i,1);cartChanged();
+}
+function delLine(i){cart.splice(i,1);cartChanged();}
+function cartChanged(){
+ saveCart();renderCartBar();
+ if(coOpen){if(!cart.length)closeModal();else renderCheckout();}
+}
+function cartCount(){return cart.reduce((a,l)=>a+l.qty,0);}
+function renderCartBar(){
+ const bar=$('cartBar');
+ if(curTab!=='order'||!DB.session){bar.classList.add('hidden');return;}
+ bar.classList.remove('hidden');
+ const t=computeTotals(cart,'none'),n=cartCount();
+ bar.innerHTML=`<div class="top"><span>🛒 ${n} item${n===1?'':'s'}</span><span class="tot">${peso(t.total)}</span></div>
+  <div class="bot"><div class="seg"><button class="${CO.pay==='Cash'?'on ok':''}" onclick="setPay('Cash')">💵 Cash</button><button class="${CO.pay==='GCash'?'on gc':''}" onclick="setPay('GCash')">📱 GCash</button></div>
+  <button class="btn-success charge" ${n?'':'disabled'} onclick="openCheckout()">Review &amp; charge</button></div>`;
+}
+function setPay(p){CO.pay=p;renderCartBar();if(coOpen)renderCheckout();}
+
+function computeTotals(lines,discType){
+ let gross=0,elig=0;
+ lines.forEach(l=>{const a=l.price*l.qty;gross+=a;if(discType!=='none'&&l.disc!==false)elig+=a;});
+ gross=r2(gross);let discount=0,vatEx=0;
+ if(discType!=='none'&&elig>0){
+  if(DB.settings.vat){const net=elig/1.12;vatEx=r2(elig-net);discount=r2(net*0.2);}
+  else discount=r2(elig*0.2);
+ }
+ return{gross,discount,vatEx,total:r2(gross-discount-vatEx)};
+}
+
+/* ---------- checkout ---------- */
+function openCheckout(){
+ if(!cart.length){toast('Cart is empty','error');return;}
+ if(!DB.shift){
+  confirmDlg('No active shift','You need to start a shift before taking orders.',startShiftDialog,{safe:true,yes:'Start shift'});return;
+ }
+ coOpen=true;
+ openModal('Review order','', '');
+ renderCheckout();
+}
+function syncCO(){
+ const g=id=>$(id);
+ if(g('coTend'))CO.tendered=g('coTend').value;
+ if(g('coRef'))CO.ref=g('coRef').value;
+ if(g('coNotes'))CO.notes=g('coNotes').value;
+ if(g('coDName'))CO.dName=g('coDName').value;
+ if(g('coDId'))CO.dId=g('coDId').value;
+}
+function renderCheckout(){
+ if(!coOpen)return;
+ syncCO();
+ const t=computeTotals(cart,CO.disc),dsc=CO.disc!=='none';
+ let h='';
+ h+=cart.map((l,i)=>`<div class="line">${dsc?`<input type="checkbox" ${l.disc!==false?'checked':''} onchange="toggleDisc(${i})" aria-label="Discount applies">`:''}
+  <div class="nm"><b>${esc(itemLabel(l))}</b><span>${peso(l.price)} each · ${peso(l.price*l.qty)}</span></div>
+  <div class="qty"><button onclick="chg(${i},-1)">−</button><span>${l.qty}</span><button onclick="chg(${i},1)">+</button><button class="btn-danger" onclick="delLine(${i})">🗑</button></div></div>`).join('');
+ h+=`<label>Order type</label><div class="seg"><button class="${CO.type==='Dine-in'?'on':''}" onclick="CO.type='Dine-in';renderCheckout()">🍽 Dine-in</button><button class="${CO.type==='Takeout'?'on':''}" onclick="CO.type='Takeout';renderCheckout()">🥡 Takeout</button></div>`;
+ h+=`<label>Discount</label><div class="seg"><button class="${CO.disc==='none'?'on':''}" onclick="setDisc('none')">None</button><button class="${CO.disc==='Senior'?'on':''}" onclick="setDisc('Senior')">Senior 20%</button><button class="${CO.disc==='PWD'?'on':''}" onclick="setDisc('PWD')">PWD 20%</button></div>`;
+ if(dsc){
+  h+=`<div class="muted small" style="margin-top:6px">Tick the items the ${CO.disc} customer is buying for themselves. ${DB.settings.vat?'VAT exemption is applied before the 20%.':'20% off only (VAT-registered setting is off).'}</div>
+   <div class="grid-2"><div><label>Name on ID</label><input type="text" id="coDName" value="${esc(CO.dName)}" placeholder="Full name"></div><div><label>ID number</label><input type="text" id="coDId" value="${esc(CO.dId)}" placeholder="ID no."></div></div>`;
+ }
+ h+=`<label>Notes</label><textarea id="coNotes" placeholder="Special instructions…">${esc(CO.notes)}</textarea>`;
+ h+=`<div style="margin-top:12px"><div class="row"><span>Subtotal</span><b>${peso(t.gross)}</b></div>`;
+ if(t.vatEx)h+=`<div class="row"><span>VAT exemption</span><b>-${peso(t.vatEx)}</b></div>`;
+ if(t.discount)h+=`<div class="row"><span>${CO.disc} discount (20%)</span><b>-${peso(t.discount)}</b></div>`;
+ h+=`<div class="row big"><span>TOTAL</span><span style="color:var(--primary)">${peso(t.total)}</span></div></div>`;
+ h+=`<label>Payment</label><div class="seg"><button class="${CO.pay==='Cash'?'on ok':''}" onclick="setPay('Cash')">💵 Cash</button><button class="${CO.pay==='GCash'?'on gc':''}" onclick="setPay('GCash')">📱 GCash</button></div>`;
+ if(CO.pay==='Cash'){
+  const opts=[...new Set([t.total,...[20,50,100,200,500,1000].filter(d=>d>=t.total)].map(r2))].slice(0,5);
+  h+=`<label>Cash received ₱</label><input type="number" inputmode="decimal" id="coTend" min="0" value="${esc(CO.tendered)}" oninput="coChange()" placeholder="0">
+   <div class="tend-quick">${opts.map((v,i)=>`<button onclick="quickTend(${v})">${i===0?'Exact':peso(v)}</button>`).join('')}</div><div id="coChange"></div>`;
+ }else{
+  h+=`<label>GCash reference no. (recommended)</label><input type="text" id="coRef" value="${esc(CO.ref)}" placeholder="Ref number" autocomplete="off">`;
+ }
+ $('mTitle').textContent='Review order';
+ $('mBody').innerHTML=h;
+ $('mFoot').style.display='flex';
+ $('mFoot').innerHTML=`<button onclick="clearCart()">Clear</button><button class="btn-success" style="flex:2" onclick="placeOrder(false)">✔ Confirm ${peso(t.total)}</button>`;
+ if(CO.pay==='Cash')coChange();
+}
+function toggleDisc(i){if(cart[i]){cart[i].disc=cart[i].disc===false;saveCart();renderCheckout();}}
+function setDisc(d){syncCO();CO.disc=d;renderCheckout();}
+function quickTend(v){CO.tendered=String(v);if($('coTend'))$('coTend').value=v;coChange();}
+function coChange(){
+ const el=$('coChange');if(!el)return;
+ const t=computeTotals(cart,CO.disc).total,v=$('coTend')?$('coTend').value:'';
+ CO.tendered=v;
+ if(v===''){el.innerHTML='';return;}
+ const d=r2(num(v)-t);
+ el.innerHTML=d>=0?`<div class="change ok">Change ${peso(d)}</div>`:`<div class="change short">Short ${peso(-d)}</div>`;
+}
+function clearCart(){confirmDlg('Clear cart','Remove all items?',()=>{cart=[];CO=freshCO();saveCart();closeModal();renderCartBar();},{yes:'Clear'});}
+
+function placeOrder(force){
+ if(placing)return;
+ syncCO();
+ if(!cart.length){toast('Cart is empty','error');return;}
+ if(!DB.shift){toast('Start a shift first','error');return;}
+ const dsc=CO.disc!=='none',t=computeTotals(cart,CO.disc);
+ if(dsc){
+  if(!CO.dName.trim()||!CO.dId.trim()){toast('Enter the discount ID name and number','error');return;}
+  if(!cart.some(l=>l.disc!==false)){toast('Tick at least one discounted item','error');return;}
+ }
+ let tendered=null,change=null;
+ if(CO.pay==='Cash'){
+  if(CO.tendered===''){toast('Enter the cash received','error');return;}
+  tendered=r2(num(CO.tendered));
+  if(tendered<t.total){toast('Cash received is less than the total','error');return;}
+  change=r2(tendered-t.total);
+ }
+ const nb=cart.reduce((a,l)=>a+l.buns*l.qty,0),np=cart.reduce((a,l)=>a+l.patties*l.qty,0);
+ if(!force&&!stockOK(nb,np)){confirmDlg('Low stock',stockMsg(nb,np),()=>placeOrder(true),{safe:true,yes:'Sell anyway'});return;}
+ placing=true;
+ try{
+  const d=today();
+  let q=0;DB.orders.forEach(o=>{if(o.date===d&&(o.queueNo||0)>q)q=o.queueNo;});
+  const order={id:DB.nextId++,queueNo:q+1,date:d,ts:Date.now(),
+   items:cart.map(l=>({name:l.name,variant:l.variant,type:l.type,price:l.price,qty:l.qty,buns:l.buns,patties:l.patties,disc:dsc&&l.disc!==false})),
+   subtotal:t.gross,discount:t.discount,vatExempt:t.vatEx,discType:dsc?CO.disc:'',discName:dsc?CO.dName.trim():'',discId:dsc?CO.dId.trim():'',
+   total:t.total,payment:CO.pay,tendered,change,ref:CO.pay==='GCash'?CO.ref.trim():'',orderType:CO.type,notes:CO.notes.trim(),
+   status:'Pending',cashier:DB.session.user,shiftId:DB.shift.id};
+  DB.orders.push(order);
+  DB.inv.buns-=nb;DB.inv.patties-=np;
+  audit('ORDER','#'+order.id+' '+peso(order.total)+' '+order.payment+(dsc?' '+order.discType:''));
+  save();
+  cart=[];CO=freshCO();saveCart();
+  renderCartBar();renderDashboard();renderOrders();
+  openModal('Order placed',
+   `<div class="bigchange">${order.payment==='Cash'?`<div class="muted">Change</div><div class="amt">${peso(order.change)}</div>`:`<div class="amt" style="color:var(--secondary)">${peso(order.total)}</div><div class="muted">GCash</div>`}
+    <div class="q">Order #${order.id} · Queue ${order.queueNo}</div><div class="muted">${order.orderType}</div></div>`,
+   `<button class="btn-primary" onclick="closeModal()">New order</button>`);
+  coOpen=false;
+ }finally{placing=false;}
+}
+
+/* =========================================================
+   MEALS
+   ========================================================= */
+function renderMeals(){
+ const sel=$('mealType'),prev=sel.value;
+ sel.innerHTML=DB.menu.burgers.map((b,i)=>`<option value="${i}">${esc(b.name)}</option>`).join('');
+ if(prev&&sel.querySelector('option[value="'+prev+'"]'))sel.value=prev;
+ const names=[...new Set(DB.meals.map(m=>m.name))];
+ $('mealNames').innerHTML=names.map(n=>`<option value="${esc(n)}">`).join('');
+ const ms=DB.meals.filter(m=>m.date===today());
+ $('mealsList').innerHTML=ms.length?ms.map(m=>`<div class="line"><div class="nm"><b>${esc(m.name)}</b><span>${esc(m.type)} · ${tstr(m.ts)}</span></div>${isAdmin()?`<button class="btn-danger btn-sm" onclick="removeMealAsk(${m.id})">Remove</button>`:''}</div>`).join(''):'<div class="muted small">No meals logged today</div>';
+}
+function logMeal(force){
+ const name=$('mealName').value.trim(),b=DB.menu.burgers[int($('mealType').value)];
+ if(!name){toast('Enter the employee name','error');return;}
+ if(!b){toast('Pick a burger','error');return;}
+ if(DB.meals.some(m=>m.date===today()&&m.name.toLowerCase()===name.toLowerCase())){toast(name+' already took a meal today','error');return;}
+ if(!force&&!stockOK(1,b.patties)){confirmDlg('Low stock',stockMsg(1,b.patties),()=>logMeal(true),{safe:true,yes:'Log anyway'});return;}
+ const id=Date.now();
+ DB.meals.push({id,name,type:b.name,date:today(),ts:id,buns:1,patties:b.patties});
+ DB.inv.buns-=1;DB.inv.patties-=b.patties;
+ audit('MEAL',name+' – '+b.name);save();
+ $('mealName').value='';renderMeals();renderDashboard();toast('Meal logged');
+}
+function removeMealAsk(id){
+ confirmDlg('Remove meal','Remove this meal and return the ingredients to stock?',()=>{
+  const i=DB.meals.findIndex(m=>m.id===id);if(i<0)return;
+  const m=DB.meals.splice(i,1)[0];DB.inv.buns+=m.buns;DB.inv.patties+=m.patties;
+  audit('MEAL_REMOVED',m.name);save();renderMeals();renderDashboard();
+ });
+}
+
+/* =========================================================
+   ORDERS
+   ========================================================= */
+let ordFilter='active';
+function renderOrders(){
+ const dEl=$('ordDate');if(!dEl.value)dEl.value=today();dEl.max=today();
+ const date=dEl.value,all=DB.orders.filter(o=>o.date===date);
+ const cnt={active:all.filter(o=>o.status==='Pending').length,served:all.filter(o=>o.status==='Served').length,void:all.filter(o=>o.status==='Void').length,all:all.length};
+ $('ordChips').innerHTML=[['active','Pending'],['served','Served'],['void','Void'],['all','All']].map(([k,l])=>`<button class="${ordFilter===k?'on':''}" onclick="ordFilter='${k}';renderOrders()">${l} (${cnt[k]})</button>`).join('');
+ const list=all.filter(o=>ordFilter==='all'||(ordFilter==='active'&&o.status==='Pending')||(ordFilter==='served'&&o.status==='Served')||(ordFilter==='void'&&o.status==='Void')).slice().reverse();
+ const isToday=date===today();
+ $('ordersList').innerHTML=list.map(o=>`<div class="order ${o.status}">
+  <div class="hd"><span>#${o.id} <span class="muted small">Q${o.queueNo||'-'}</span></span><span style="color:var(--primary)">${peso(o.total)}</span></div>
+  <span class="badge ${o.status}">${o.status}</span><span class="badge t">${o.orderType||'Dine-in'}</span><span class="badge t">${o.payment}</span>${o.discType?`<span class="badge t">${esc(o.discType)}</span>`:''}
+  <div class="items">${o.items.map(i=>esc(itemLabel(i))+' ×'+i.qty).join(' · ')}</div>
+  ${o.payment==='Cash'&&o.tendered!=null?`<div class="meta">Cash ${peso(o.tendered)} · Change ${peso(o.change)}</div>`:''}
+  ${o.ref?`<div class="meta">GCash ref: ${esc(o.ref)}</div>`:(o.payment==='GCash'?'<div class="meta">GCash ref: not recorded</div>':'')}
+  ${o.discType?`<div class="meta">${esc(o.discType)}: ${esc(o.discName)} (${esc(o.discId)}) · −${peso((o.discount||0)+(o.vatExempt||0))}</div>`:''}
+  ${o.notes?`<div class="meta">📝 ${esc(o.notes)}</div>`:''}
+  ${o.status==='Void'?`<div class="meta" style="color:var(--danger)">Void: ${esc(o.voidReason||'')} (${esc(o.voidBy||'')})</div>`:''}
+  <div class="meta">${tstr(o.ts)} · ${esc(o.cashier)}</div>
+  <div class="acts">
+   ${o.status!=='Void'?`<button class="btn-sm ${o.status==='Pending'?'btn-success':''}" onclick="toggleServed(${o.id})">${o.status==='Pending'?'✔ Served':'↩ Pending'}</button>`:''}
+   ${isToday?`<button class="btn-sm" onclick="repeatOrder(${o.id})">🔁 Repeat</button>`:''}
+   ${o.status!=='Void'&&(isAdmin()||isToday)?`<button class="btn-sm btn-danger" onclick="voidDialog(${o.id})">Void</button>`:''}
+  </div></div>`).join('')||'<div class="muted">No orders here</div>';
+}
+function toggleServed(id){
+ const o=DB.orders.find(x=>x.id===id);if(!o||o.status==='Void')return;
+ o.status=o.status==='Pending'?'Served':'Pending';
+ audit('STATUS','#'+id+' → '+o.status);save();renderOrders();renderDashboard();
+}
+function repeatOrder(id){
+ if(!DB.shift){toast('Start a shift first','error');return;}
+ const o=DB.orders.find(x=>x.id===id);if(!o)return;
+ cart=o.items.map(i=>{
+  let price=i.price,key;
+  if(i.type==='burger'){
+   const b=DB.menu.burgers.find(x=>x.name===i.name);
+   if(b)price=i.variant==='B1T1'?b.b1t1:b.single;
+   key='B:'+(b?b.id:i.name)+':'+i.variant;
+  }else{
+   const e=DB.menu.extras.find(x=>x.name===i.name);
+   if(e)price=e.price;
+   key='E:'+(e?e.id:i.name);
+  }
+  return{key,type:i.type,name:i.name,variant:i.variant,price,qty:i.qty,buns:i.buns,patties:i.patties,disc:true};
+ });
+ CO=freshCO();saveCart();showTab('order');toast('Order copied to cart');
+}
+function voidDialog(id){
+ const o=DB.orders.find(x=>x.id===id);if(!o||o.status==='Void')return;
+ const isToday=o.date===today();
+ openModal('Void order #'+id,
+  `<div class="banner red">This cancels the sale of ${peso(o.total)}. It stays in the records as Void.</div>
+   <label>Reason</label>
+   <select id="vReason"><option>Customer cancelled</option><option>Wrong order entered</option><option>Cashier error</option><option>Food issue</option><option>Other</option></select>
+   <label>Details (optional)</label><input type="text" id="vNote" placeholder="Short note">
+   <label style="display:flex;gap:8px;align-items:center;margin-top:12px"><input type="checkbox" id="vStock" style="width:22px;height:22px;min-height:0" ${isToday?'checked':''}> Return ingredients to stock</label>
+   ${isToday?'':'<div class="muted small">This is an older order. Leave unchecked unless that food was never made.</div>'}`,
+  `<button onclick="closeModal()">Cancel</button><button class="btn-danger" onclick="doVoid(${id})">Void order</button>`);
+}
+function doVoid(id){
+ const o=DB.orders.find(x=>x.id===id);if(!o||o.status==='Void')return;
+ const reason=$('vReason').value+($('vNote').value.trim()?' – '+$('vNote').value.trim():'');
+ o.status='Void';o.voidReason=reason;o.voidBy=DB.session.user;o.voidTs=Date.now();
+ if($('vStock').checked){
+  o.items.forEach(i=>{DB.inv.buns+=(i.buns||0)*i.qty;DB.inv.patties+=(i.patties||0)*i.qty;});
+ }
+ audit('VOID','#'+id+' '+peso(o.total)+' – '+reason);save();
+ closeModal();renderOrders();renderDashboard();renderReports();toast('Order voided');
+}
+
+/* =========================================================
+   REPORTS
+   ========================================================= */
+function renderReports(){
+ if(!DB.session)return;
+ const tabs=[['cash','💵 Cash'],['stats','📊 Stats'],['audit','🕘 Audit']];
+ if(isAdmin())tabs.push(['admin','⚙ Admin']);
+ if(curReport==='admin'&&!isAdmin())curReport='cash';
+ $('subtabs').innerHTML=tabs.map(([k,l])=>`<button class="${curReport===k?'on':''}" onclick="showReport('${k}')">${l}</button>`).join('');
+ ['cash','stats','audit','admin'].forEach(k=>$('rp-'+k).classList.toggle('active',k===curReport));
+ if(curReport==='cash')renderCash();
+ if(curReport==='stats')renderStats();
+ if(curReport==='audit')renderAudit();
+ if(curReport==='admin')renderAdmin();
+}
+function renderCash(){
+ let h='<h3>💵 Cash reconciliation</h3>';
+ if(DB.shift){
+  const f=shiftFigures();
+  h+=`<div class="row"><span>Opening float</span><b>${peso(f.float)}</b></div>
+   <div class="row"><span>Cash sales (${f.orders} orders, all payments)</span><b>${peso(f.cash)}</b></div>
+   <div class="row"><span>GCash sales</span><b>${peso(f.gcash)}</b></div>
+   <div class="row big"><span>Expected in drawer</span><span>${peso(f.expected)}</span></div>
+   ${f.missing?`<div class="banner">${f.missing} GCash order(s) have no reference number.</div>`:''}
+   <label>Quick check: cash counted ₱</label>
+   <input type="number" inputmode="decimal" id="qcActual" oninput="quickCheck()" placeholder="0"><div id="qcResult"></div>
+   <div class="muted small" style="margin-top:6px">To finish and record this, use End shift at the top.</div>`;
+ }else h+='<div class="muted">No active shift. Start one to reconcile cash.</div>';
+ h+='<h3 style="margin-top:20px">Closed shifts</h3>';
+ const cl=DB.closings.slice(-10).reverse();
+ h+=cl.length?cl.map(c=>`<div class="order ${c.diff===0?'Served':(c.diff<0?'Void':'')}">
+  <div class="hd"><span>${dtstr(c.start)} → ${tstr(c.end)}</span><span>${c.diff===0?'✔':peso(c.diff)}</span></div>
+  <div class="meta">${esc(c.user)} · ${c.orders} orders · expected ${peso(c.expected)} · counted ${peso(c.actual)}</div>
+  ${c.countedBuns!=null||c.countedPatties!=null?`<div class="meta">Stock: system ${c.sysBuns}/${c.sysPatties} · counted ${c.countedBuns==null?'–':c.countedBuns}/${c.countedPatties==null?'–':c.countedPatties} (buns/patties)</div>`:''}
+  ${c.note?`<div class="meta">📝 ${esc(c.note)}</div>`:''}</div>`).join(''):'<div class="muted small">No closed shifts yet</div>';
+ $('rp-cash').innerHTML=h;
+}
+function quickCheck(){
+ const v=$('qcActual').value;if(v===''){$('qcResult').innerHTML='';return;}
+ const d=r2(num(v)-shiftFigures().expected);
+ $('qcResult').innerHTML=d===0?'<div class="change ok">✔ Matches</div>':(d>0?`<div class="change ok">Over by ${peso(d)}</div>`:`<div class="change short">Short by ${peso(-d)}</div>`);
+}
+function renderStats(){
+ const s=dayStats(today());
+ const items=Object.entries(s.items).sort((a,b)=>b[1].qty-a[1].qty);
+ const d=DB.days[today()];
+ const rs=DB.restocks.filter(r=>r.date===today());
+ const rb=rs.reduce((a,r)=>a+r.buns,0),rp=rs.reduce((a,r)=>a+r.patties,0);
+ $('rp-stats').innerHTML=`<h3>📊 Today</h3>
+  <div class="stat-grid">
+   <div class="stat"><div class="v">${s.orders}</div><div class="l">Orders</div></div>
+   <div class="stat"><div class="v">${peso(s.orders?s.total/s.orders:0)}</div><div class="l">Average order</div></div>
+   <div class="stat"><div class="v">${s.served}/${s.orders}</div><div class="l">Served</div></div>
+   <div class="stat"><div class="v">${s.voids}</div><div class="l">Voided</div></div></div>
+  <table style="margin-top:12px"><tr><td>Gross sales</td><td class="r">${peso(s.gross)}</td></tr>
+   <tr><td>Senior/PWD discounts</td><td class="r">-${peso(s.discount)}</td></tr>
+   <tr><td>VAT exemptions</td><td class="r">-${peso(s.vatEx)}</td></tr>
+   <tr><td><b>Net sales</b></td><td class="r"><b>${peso(s.total)}</b></td></tr>
+   <tr><td>Cash</td><td class="r">${peso(s.cash)}</td></tr><tr><td>GCash</td><td class="r">${peso(s.gcash)}</td></tr>
+   <tr><td>Dine-in / Takeout</td><td class="r">${s.byType['Dine-in']||0} / ${s.byType['Takeout']||0}</td></tr></table>
+  <h3 style="margin-top:16px">Items sold</h3>
+  ${items.length?`<table><tr><th>Item</th><th class="r">Qty</th><th class="r">Amount</th></tr>${items.map(([k,v])=>`<tr><td>${esc(k)}</td><td class="r">${v.qty}</td><td class="r">${peso(v.rev)}</td></tr>`).join('')}</table>`:'<div class="muted small">Nothing sold yet</div>'}
+  <h3 style="margin-top:16px">Stock</h3>
+  <table><tr><th></th><th class="r">Buns</th><th class="r">Patties</th></tr>
+   <tr><td>Opening</td><td class="r">${d?d.buns:'–'}</td><td class="r">${d?d.patties:'–'}</td></tr>
+   <tr><td>Restocked</td><td class="r">${rb}</td><td class="r">${rp}</td></tr>
+   <tr><td>Used (sales + meals)</td><td class="r">${s.buns}</td><td class="r">${s.patties}</td></tr>
+   <tr><td><b>System remaining</b></td><td class="r"><b>${DB.inv.buns}</b></td><td class="r"><b>${DB.inv.patties}</b></td></tr></table>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px"><button onclick="downloadCSV('today')">⬇ Today CSV</button><button onclick="downloadCSV('all')">⬇ All orders CSV</button></div>`;
+}
+function renderAudit(){
+ const a=DB.audit.slice(-150).reverse();
+ $('rp-audit').innerHTML='<h3>🕘 Audit log (latest 150)</h3>'+(a.length?a.map(x=>`<div class="audit-item"><b>${dtstr(x.ts)}</b> · ${esc(x.user)} · ${esc(x.action)} · ${esc(x.details)}</div>`).join(''):'<div class="muted">Empty</div>');
+}
+
+/* =========================================================
+   ADMIN
+   ========================================================= */
+function renderAdmin(){
+ if(!isAdmin()){$('rp-admin').innerHTML='';return;}
+ const m=DB.menu,s=DB.settings;
+ let h=`<div class="card"><h3>🍔 Menu &amp; prices</h3>`;
+ m.burgers.forEach((b,i)=>{h+=`<div class="mrow"><input id="mb_n${i}" value="${esc(b.name)}" placeholder="Name">
+  <div class="grid-3"><div><label>Single ₱</label><input type="number" inputmode="decimal" id="mb_s${i}" value="${b.single}"></div>
+  <div><label>B1T1 ₱</label><input type="number" inputmode="decimal" id="mb_b${i}" value="${b.b1t1}"></div>
+  <div><label>Patties</label><input type="number" inputmode="numeric" id="mb_p${i}" value="${b.patties}"></div></div>
+  <button class="btn-danger btn-sm" onclick="menuDel('b',${i})">Remove</button></div>`;});
+ h+=`<button class="wide" onclick="menuAdd('b')">+ Add burger</button><h3 style="margin-top:18px">Extras</h3>`;
+ m.extras.forEach((e,i)=>{h+=`<div class="mrow"><input id="me_n${i}" value="${esc(e.name)}" placeholder="Name">
+  <div class="grid-2"><div><label>Price ₱</label><input type="number" inputmode="decimal" id="me_p${i}" value="${e.price}"></div>
+  <div><label>Patties used</label><input type="number" inputmode="numeric" id="me_u${i}" value="${e.patties||0}"></div></div>
+  <button class="btn-danger btn-sm" onclick="menuDel('e',${i})">Remove</button></div>`;});
+ h+=`<button class="wide" onclick="menuAdd('e')">+ Add extra</button>
+  <button class="btn-success wide" onclick="menuSave()">Save menu</button>
+  <div class="muted small" style="margin-top:6px">Price changes apply to new orders only. Past orders keep the price they were sold at.</div></div>`;
+ h+=`<div class="card"><h3>⚙ Settings</h3>
+  <label>Business name</label><input id="stName" value="${esc(s.business)}">
+  <label>Low stock warning below</label><input type="number" inputmode="numeric" id="stLow" value="${s.lowStock}">
+  <label style="display:flex;gap:8px;align-items:center;margin-top:12px"><input type="checkbox" id="stVat" style="width:22px;height:22px;min-height:0" ${s.vat?'checked':''}> VAT-registered (Senior/PWD also gets VAT exemption)</label>
+  <button class="btn-success wide" onclick="saveSettings()">Save settings</button>
+  <h4 style="margin:18px 0 0;font-size:14px">Change PINs (4–8 digits, leave blank to keep)</h4>
+  <div class="grid-2"><div><label>New Admin PIN</label><input type="password" inputmode="numeric" id="pinA" autocomplete="off"></div><div><label>New Cashier PIN</label><input type="password" inputmode="numeric" id="pinC" autocomplete="off"></div></div>
+  <button class="wide" onclick="savePins()">Update PINs</button></div>`;
+ h+=`<div class="card"><h3>💾 Backup &amp; restore</h3>
+  <div class="muted small">${DB.lastBackup?'Last backup: '+dtstr(DB.lastBackup):'No backup made yet.'} Backups include PINs, so keep the file private.</div>
+  <button class="btn-primary wide" onclick="exportBackup(true)">⬇ Download backup (JSON)</button>
+  <button class="wide" onclick="shareBackup()">📤 Share backup…</button>
+  <button class="wide" onclick="$('restoreFile').click()">⬆ Restore from backup file</button>
+  ${localStorage.getItem(SNAP_KEY)?'<button class="wide" onclick="undoSnapshotAsk()">↩ Undo last reset/restore</button>':''}</div>`;
+ h+=`<div class="card"><h3>⚠ Danger zone</h3><button class="btn-danger wide" onclick="resetTodayDialog()">Reset today's data</button>
+  <div class="muted small" style="margin-top:6px">Deletes today's orders, meals and restocks and puts stock back. Other days are kept. A snapshot is saved so you can undo.</div></div>`;
+ $('rp-admin').innerHTML=h;
+}
+function readMenu(){
+ const m={burgers:[],extras:[]};
+ for(let i=0;i<DB.menu.burgers.length;i++){
+  const b=DB.menu.burgers[i],name=$('mb_n'+i).value.trim(),s=num($('mb_s'+i).value),t=num($('mb_b'+i).value),p=int($('mb_p'+i).value);
+  if(!name||s<0||t<0||p<0){toast('Check burger #'+(i+1)+': name, prices and patties','error');return null;}
+  m.burgers.push({id:b.id,name,single:r2(s),b1t1:r2(t),patties:p});
+ }
+ for(let i=0;i<DB.menu.extras.length;i++){
+  const e=DB.menu.extras[i],name=$('me_n'+i).value.trim(),p=num($('me_p'+i).value),u=int($('me_u'+i).value);
+  if(!name||p<0||u<0){toast('Check extra #'+(i+1),'error');return null;}
+  m.extras.push({id:e.id,name,price:r2(p),patties:u});
+ }
+ return m;
+}
+function menuAdd(kind){
+ const m=readMenu();if(!m)return;
+ if(kind==='b')m.burgers.push({id:'b'+Date.now(),name:'New Burger',single:50,b1t1:95,patties:1});
+ else m.extras.push({id:'e'+Date.now(),name:'New Extra',price:10,patties:0});
+ DB.menu=m;save();renderAdmin();renderMenu();renderMeals();
+}
+function menuDel(kind,i){
+ const m=readMenu();if(!m)return;
+ const name=(kind==='b'?m.burgers:m.extras)[i].name;
+ confirmDlg('Remove item','Remove "'+esc(name)+'" from the menu? Past orders are not affected.',()=>{
+  (kind==='b'?m.burgers:m.extras).splice(i,1);DB.menu=m;audit('MENU','Removed '+name);save();renderAdmin();renderMenu();renderMeals();
+ },{yes:'Remove'});
+}
+function menuSave(){
+ const m=readMenu();if(!m)return;
+ DB.menu=m;audit('MENU','Menu saved');save();renderMenu();renderMeals();renderAdmin();toast('Menu saved');
+}
+function saveSettings(){
+ DB.settings.business=$('stName').value.trim()||'Havens Burger';
+ DB.settings.lowStock=Math.max(0,int($('stLow').value));
+ DB.settings.vat=$('stVat').checked;
+ audit('SETTINGS','VAT '+(DB.settings.vat?'on':'off')+', low stock '+DB.settings.lowStock);save();renderAll();toast('Settings saved');
+}
+function savePins(){
+ const a=$('pinA').value.trim(),c=$('pinC').value.trim();
+ if(!a&&!c){toast('Enter a new PIN','error');return;}
+ if((a&&!/^\d{4,8}$/.test(a))||(c&&!/^\d{4,8}$/.test(c))){toast('PINs must be 4–8 digits','error');return;}
+ const na=a||DB.settings.pins.admin,nc=c||DB.settings.pins.cashier;
+ if(na===nc){toast('Admin and Cashier PINs must differ','error');return;}
+ DB.settings.pins={admin:na,cashier:nc};audit('PINS','PIN changed');save();
+ $('pinA').value='';$('pinC').value='';toast('PINs updated');
+}
+
+/* ---------- backup / restore ---------- */
+function backupJSON(){DB.lastBackup=Date.now();save();return JSON.stringify(DB);}
+function exportBackup(download){
+ if(!isAdmin()){toast('Admin only','error');return;}
+ const json=backupJSON();
+ downloadFile('HavensBurger_backup_'+today()+'.json',json,'application/json',false);
+ audit('BACKUP','Backup downloaded');save();renderDashboard();if(curTab==='reports')renderReports();
+ toast('Backup downloaded');
+}
+async function shareBackup(){
+ if(!isAdmin())return;
+ const json=backupJSON(),name='HavensBurger_backup_'+today()+'.json';
+ try{
+  const f=new File([json],name,{type:'application/json'});
+  if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f],title:name});audit('BACKUP','Shared');save();renderDashboard();return;}
+ }catch(e){if(e&&e.name==='AbortError')return;}
+ downloadFile(name,json,'application/json',false);toast('Sharing not supported here, downloaded instead');
+}
+function restoreFileChosen(inp){
+ const f=inp.files&&inp.files[0];inp.value='';if(!f||!isAdmin())return;
+ const r=new FileReader();
+ r.onload=()=>{
+  let d;try{d=JSON.parse(r.result);}catch(e){toast('That file is not a valid backup','error');return;}
+  if(!d||!Array.isArray(d.orders)||!d.settings||!d.menu){toast('That file is not a Havens POS v12 backup','error');return;}
+  confirmDlg('Restore backup',`This replaces ALL current data with the backup:<br><b>${d.orders.length}</b> orders, ${(d.closings||[]).length} closed shifts.<br>A snapshot of the current data is kept so you can undo.`,()=>{
+   try{localStorage.setItem(SNAP_KEY,localStorage.getItem(KEY)||'');}catch(e){}
+   const sess=DB.session;DB=merge(d);DB.session=sess;audit('RESTORE','Backup restored');save();renderAll();toast('Backup restored');
+  },{yes:'Restore'});
+ };
+ r.readAsText(f);
+}
+function undoSnapshotAsk(){
+ confirmDlg('Undo','Return to the data saved before the last reset or restore? Anything entered since will be lost.',()=>{
+  try{
+   const raw=localStorage.getItem(SNAP_KEY);const sess=DB.session;
+   DB=merge(JSON.parse(raw));DB.session=sess;localStorage.removeItem(SNAP_KEY);audit('UNDO_SNAPSHOT','Restored snapshot');save();renderAll();toast('Snapshot restored');
+  }catch(e){toast('Snapshot could not be read','error');}
+ },{yes:'Undo'});
+}
+function resetTodayDialog(){
+ openModal('Reset today',
+  `<div class="banner red">Deletes today's orders, meals, restocks and opening stock, and returns stock to what it was.</div>
+   <label>Type RESET to confirm</label><input id="rstTxt" autocomplete="off" autocapitalize="characters">`,
+  `<button onclick="closeModal()">Cancel</button><button class="btn-danger" onclick="doResetToday()">Reset today</button>`);
+}
+function doResetToday(){
+ if($('rstTxt').value.trim().toUpperCase()!=='RESET'){toast('Type RESET to confirm','error');return;}
+ const d=today();
+ try{localStorage.setItem(SNAP_KEY,localStorage.getItem(KEY)||'');}catch(e){}
+ DB.orders.filter(o=>o.date===d&&o.status!=='Void').forEach(o=>o.items.forEach(i=>{DB.inv.buns+=(i.buns||0)*i.qty;DB.inv.patties+=(i.patties||0)*i.qty;}));
+ DB.meals.filter(m=>m.date===d).forEach(m=>{DB.inv.buns+=m.buns;DB.inv.patties+=m.patties;});
+ DB.restocks.filter(r=>r.date===d).forEach(r=>{DB.inv.buns-=r.buns;DB.inv.patties-=r.patties;});
+ DB.orders=DB.orders.filter(o=>o.date!==d);DB.meals=DB.meals.filter(m=>m.date!==d);DB.restocks=DB.restocks.filter(r=>r.date!==d);
+ delete DB.days[d];audit('RESET','Reset data for '+d);save();
+ closeModal();renderAll();toast('Today was reset');
+}
+
+/* ---------- CSV ---------- */
+function downloadCSV(scope){
+ const rows=[];
+ if(scope==='all'){
+  if(!DB.orders.length){toast('No orders yet','error');return;}
+  rows.push(['Date','ID','Queue','Time','Type','Status','Payment','GCash ref','Subtotal','Discount','VAT exempt','Total','Discount type','ID name','ID no.','Items','Notes','Void reason','Cashier']);
+  DB.orders.forEach(o=>rows.push([o.date,o.id,o.queueNo||'',tstr(o.ts),o.orderType||'',o.status,o.payment,o.ref||'',o.subtotal,o.discount||0,o.vatExempt||0,o.total,o.discType||'',o.discName||'',o.discId||'',o.items.map(i=>itemLabel(i)+' x'+i.qty).join(' | '),o.notes||'',o.voidReason||'',o.cashier]));
+  downloadFile('HavensBurger_all_orders_'+today()+'.csv',rows.map(r=>r.map(csvCell).join(',')).join('\r\n'),'text/csv',true);
+  toast('Downloaded');return;
+ }
+ const d=today(),s=dayStats(d),os=DB.orders.filter(o=>o.date===d);
+ if(!os.length){toast('No orders today','error');return;}
+ const op=DB.days[d],rs=DB.restocks.filter(r=>r.date===d),ms=DB.meals.filter(m=>m.date===d);
+ rows.push([(DB.settings.business||'Havens Burger')+' daily report',d],[]);
+ rows.push(['SUMMARY'],['Orders',s.orders],['Voided',s.voids],['Gross sales',s.gross],['Senior/PWD discounts',s.discount],['VAT exemptions',s.vatEx],['Net sales',s.total],['Cash',s.cash],['GCash',s.gcash],['Average order',s.orders?r2(s.total/s.orders):0],[]);
+ rows.push(['STOCK','Buns','Patties'],['Opening',op?op.buns:'',op?op.patties:''],['Restocked',rs.reduce((a,r)=>a+r.buns,0),rs.reduce((a,r)=>a+r.patties,0)],['Used (sales+meals)',s.buns,s.patties],['System remaining',DB.inv.buns,DB.inv.patties],[]);
+ rows.push(['ITEMS SOLD','Qty','Amount']);Object.entries(s.items).sort((a,b)=>b[1].qty-a[1].qty).forEach(([k,v])=>rows.push([k,v.qty,r2(v.rev)]));rows.push([]);
+ rows.push(['STAFF MEALS','Burger','Time']);ms.forEach(m=>rows.push([m.name,m.type,tstr(m.ts)]));rows.push([]);
+ rows.push(['SHIFTS CLOSED','Start','End','Float','Expected','Counted','Difference','Cashier']);
+ DB.closings.filter(c=>c.date===d).forEach(c=>rows.push(['',tstr(c.start),tstr(c.end),c.float,c.expected,c.actual,c.diff,c.user]));rows.push([]);
+ rows.push(['ORDERS'],['ID','Queue','Time','Type','Status','Payment','GCash ref','Subtotal','Discount','VAT exempt','Total','Discount type','ID name','ID no.','Items','Notes','Void reason','Cashier']);
+ os.forEach(o=>rows.push([o.id,o.queueNo||'',tstr(o.ts),o.orderType||'',o.status,o.payment,o.ref||'',o.subtotal,o.discount||0,o.vatExempt||0,o.total,o.discType||'',o.discName||'',o.discId||'',o.items.map(i=>itemLabel(i)+' x'+i.qty).join(' | '),o.notes||'',o.voidReason||'',o.cashier]));
+ downloadFile('HavensBurger_'+d+'.csv',rows.map(r=>r.map(csvCell).join(',')).join('\r\n'),'text/csv',true);
+ toast('Downloaded');
+}
+
+/* ---------- boot ---------- */
+let curDay=today();
+setInterval(()=>{
+ if(today()!==curDay){curDay=today();$('ordDate').value=today();if(DB.session){renderAll();toast('New day: '+curDay+'. Check opening stock and your shift.');}}
+},60000);
+applyTheme();
+initializeSupabase();
+</script>
+</body>
+</html>
