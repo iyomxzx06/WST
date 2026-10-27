@@ -272,23 +272,32 @@ async function fetchRows(table,columns='*',order='created_at'){
  if(error)dbError(error);
  return data||[];
 }
+async function getOperationalReport(startDate,endDate){
+ const {data,error}=await client.rpc('get_operational_report',{
+  p_start:manilaMidnightUtc(startDate),p_end:manilaMidnightUtc(endDate),
+  p_start_date:startDate,p_end_date:endDate
+ });
+ if(error)dbError(error);
+ return data;
+}
 async function renderOverview(){
  const today=manilaDateString();
- const [orders,stock,expenseRows]=await Promise.all([
-  client.from('sales_orders').select('id,total,status,created_at').gte('created_at',manilaMidnightUtc(today)),
-  client.from('ingredients').select('id,name,unit,stock_quantity,reorder_level').eq('active',true),
-  ['owner_admin','manager'].includes(profile.role)?client.from('expenses').select('amount').eq('spent_at',today):Promise.resolve({data:[],error:null})
+ const tomorrow=shiftDateString(today,1);
+ const [report,stock]=await Promise.all([
+  getOperationalReport(today,tomorrow),
+  client.from('ingredients').select('id,name,unit,stock_quantity,reorder_level').eq('active',true)
  ]);
- for(const result of [orders,stock,expenseRows])if(result.error)dbError(result.error);
- const sales=orders.data||[],low=(stock.data||[]).filter(x=>Number(x.stock_quantity)<=Number(x.reorder_level));
- const total=sales.filter(x=>x.status!=='void').reduce((sum,row)=>sum+Number(row.total),0);
- const spend=(expenseRows.data||[]).reduce((sum,row)=>sum+Number(row.amount),0);
+ if(stock.error)dbError(stock.error);
+ const low=(stock.data||[]).filter(x=>Number(x.stock_quantity)<=Number(x.reorder_level));
+ const orders=report.orders,payments=report.payments,outstanding=report.outstanding;
  $('pageContent').innerHTML=`<div class="page-heading module-heading"><div><span class="inventory-item-label">MANILA · ${today}</span><h2>Today's overview</h2><p>Quick view of sales, stock, kitchen activity, and spending.</p></div></div>
   <div class="grid stats">
-   <div class="stat stat-sales"><div class="stat-top"><div class="stat-label">Sales today</div><span class="stat-icon">₱</span></div><div class="stat-value">${peso(total)}</div><p class="stat-caption">Non-void orders</p></div>
-   <div class="stat stat-orders"><div class="stat-top"><div class="stat-label">Orders today</div><span class="stat-icon">#</span></div><div class="stat-value">${sales.filter(x=>x.status!=='void').length}</div><p class="stat-caption">Orders placed today</p></div>
+   <div class="stat stat-sales"><div class="stat-top"><div class="stat-label">Sales recorded today</div><span class="stat-icon">₱</span></div><div class="stat-value">${peso(orders.recorded_order_value)}</div><p class="stat-caption">${Number(orders.order_count)} non-void orders</p></div>
+   <div class="stat stat-payment"><div class="stat-top"><div class="stat-label">Payments collected</div><span class="stat-icon">✓</span></div><div class="stat-value">${peso(payments.net_collected)}</div><p class="stat-caption">Net receipts after refunds</p></div>
+   <div class="stat stat-orders"><div class="stat-top"><div class="stat-label">Unpaid online · current</div><span class="stat-icon">…</span></div><div class="stat-value">${peso(outstanding.amount)}</div><p class="stat-caption">${Number(outstanding.unpaid_order_count)} open orders · all dates</p></div>
+   <div class="stat stat-orders"><div class="stat-top"><div class="stat-label">Orders today</div><span class="stat-icon">#</span></div><div class="stat-value">${Number(orders.order_count)}</div><p class="stat-caption">Non-void orders</p></div>
    <div class="stat ${low.length?'stat-alert':'stat-stock'}"><div class="stat-top"><div class="stat-label">Low-stock items</div><span class="stat-icon">!</span></div><div class="stat-value">${low.length}</div><p class="stat-caption">${low.length?'Needs restocking':'Stock levels look good'}</p></div>
-   <div class="stat stat-expenses"><div class="stat-top"><div class="stat-label">Expenses today</div><span class="stat-icon">−</span></div><div class="stat-value">${['owner_admin','manager'].includes(profile.role)?peso(spend):'—'}</div><p class="stat-caption">${['owner_admin','manager'].includes(profile.role)?'Recorded operating expenses':'Restricted by role'}</p></div>
+   <div class="stat stat-expenses"><div class="stat-top"><div class="stat-label">Expenses today</div><span class="stat-icon">−</span></div><div class="stat-value">${peso(report.expenses.total)}</div><p class="stat-caption">Recorded operating expenses</p></div>
   </div>
   <section class="panel module-panel"><div class="section-heading"><div><h2>Stock alerts</h2><p>Ingredients at or below their reorder level.</p></div><span class="pill ${low.length?'orange':'green'}">${low.length} ${low.length===1?'item':'items'}</span></div>${low.length?`<div class="table-wrap"><table class="dashboard-stock-table"><thead><tr><th>Ingredient</th><th>On hand</th><th>Reorder at</th></tr></thead><tbody>${low.map(row=>`<tr><td><b>${esc(ingredientLabel(row.name))}</b></td><td><span class="stock-quantity-low">${Number(row.stock_quantity)} ${esc(row.unit)}</span></td><td>${Number(row.reorder_level)} ${esc(row.unit)}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty empty-success"><span class="empty-success-mark">✓</span><b>All stocked up</b><span>No ingredients are below their reorder level.</span></div>'}</section>`;
 }
@@ -331,7 +340,7 @@ function burgerLabel(number){
  return {1:'Classic Burger',2:'Cheese Burger',3:'Deluxe Burger',4:'Double Cheese Burger'}[number];
 }
 async function renderOnlineOrders(){
- const columns='id,public_reference,customer_name,customer_phone,fulfillment_type,delivery_address,delivery_landmark,delivery_fee,payment_method,subtotal,total,notes,status,created_at,online_order_items(id,product_name,quantity,unit_price)';
+ const columns='id,public_reference,customer_name,customer_phone,fulfillment_type,delivery_address,delivery_landmark,delivery_fee,payment_method,subtotal,total,notes,status,sales_order_id,created_at,online_order_items(id,product_name,quantity,unit_price)';
  const [pendingResult,recentResult]=await Promise.all([
   client.from('online_orders').select(columns).eq('status','pending').order('created_at',{ascending:true}),
   client.from('online_orders').select(columns).neq('status','pending').order('created_at',{ascending:false}).limit(20)
@@ -339,28 +348,80 @@ async function renderOnlineOrders(){
  if(pendingResult.error)dbError(pendingResult.error);
  if(recentResult.error)dbError(recentResult.error);
  const pending=pendingResult.data||[],recent=recentResult.data||[];
+ const saleIds=[...new Set(recent.map(order=>order.sales_order_id).filter(Boolean))];
+ let paymentsByOrder=new Map(),refundsByPayment=new Map();
+ if(saleIds.length){
+  const {data,error}=await client.from('payments').select('id,order_id,payment_method,amount').in('order_id',saleIds);
+  if(error)dbError(error);
+  paymentsByOrder=new Map((data||[]).map(payment=>[payment.order_id,payment]));
+  if(['owner_admin','manager'].includes(profile.role)&&data?.length){
+   const {data:refunds,error:refundError}=await client.from('payment_refunds')
+    .select('payment_id,amount').in('payment_id',data.map(payment=>payment.id));
+   if(refundError)dbError(refundError);
+   for(const refund of refunds||[]){
+    refundsByPayment.set(refund.payment_id,(refundsByPayment.get(refund.payment_id)||0)+Number(refund.amount));
+   }
+  }
+ }
  $('pageContent').innerHTML=`<div class="page-heading module-heading"><div><span class="inventory-item-label">CUSTOMER ORDERS</span><h2>Online orders</h2><p>Review incoming orders, confirm with the customer, then send accepted orders to the kitchen.</p></div><button id="refreshOnlineOrders" class="secondary refresh-button" type="button">↻ Refresh</button></div>
-  <div class="online-orders-note"><span class="online-orders-note-icon">i</span><span>Delivery has a flat <b>₱30 fee</b> and is subject to staff confirming the service area. Cash and GCash are recorded as payment preferences; collect payment outside this app. No online payment is processed.</span></div>
-  <section class="panel module-panel"><div class="section-heading"><div><h2>Needs your confirmation</h2><p>Accepting an order checks stock, records the sale, and sends it to Kitchen display.</p></div><span class="pill ${pending.length?'orange':'green'}">${pending.length} waiting</span></div>${pending.length?`<div class="online-order-list">${pending.map(onlineOrderCard).join('')}</div>`:'<div class="empty empty-success"><span class="empty-success-mark">✓</span><b>All caught up</b><span>New customer orders will appear here.</span></div>'}</section>
-  ${recent.length?`<section class="panel module-panel"><div class="section-heading"><div><h2>Recent online orders</h2><p>Latest 20 processed requests.</p></div></div><div class="online-order-list">${recent.map(onlineOrderCard).join('')}</div></section>`:''}`;
+  <div class="online-orders-note"><span class="online-orders-note-icon">i</span><span>Delivery has a flat <b>₱30 fee</b> and is subject to staff confirming the service area. A preferred method is not payment confirmation. Record payment only after cash is received or a GCash/card transaction is verified.</span></div>
+  <section class="panel module-panel"><div class="section-heading"><div><h2>Needs your confirmation</h2><p>Accepting an order checks stock, records the sale, and sends it to Kitchen display. Payment remains outstanding until recorded.</p></div><span class="pill ${pending.length?'orange':'green'}">${pending.length} waiting</span></div>${pending.length?`<div class="online-order-list">${pending.map(order=>{const payment=paymentsByOrder.get(order.sales_order_id);return onlineOrderCard(order,payment,payment?refundsByPayment.get(payment.id)||0:0);}).join('')}</div>`:'<div class="empty empty-success"><span class="empty-success-mark">✓</span><b>All caught up</b><span>New customer orders will appear here.</span></div>'}</section>
+  ${recent.length?`<section class="panel module-panel"><div class="section-heading"><div><h2>Recent online orders</h2><p>Latest 20 processed requests.</p></div></div><div class="online-order-list">${recent.map(order=>{const payment=paymentsByOrder.get(order.sales_order_id);return onlineOrderCard(order,payment,payment?refundsByPayment.get(payment.id)||0:0);}).join('')}</div></section>`:''}`;
  $('refreshOnlineOrders').addEventListener('click',()=>openPage('online-orders'));
  $('pageContent').querySelectorAll('[data-accept-online]').forEach(button=>button.addEventListener('click',()=>acceptOnlineOrder(button)));
  $('pageContent').querySelectorAll('[data-reject-online]').forEach(button=>button.addEventListener('click',()=>rejectOnlineOrder(button)));
+ $('pageContent').querySelectorAll('[data-record-online-payment]').forEach(form=>{
+  form.addEventListener('submit',recordOnlineOrderPayment);
+  const method=form.querySelector('[name="payment_method"]');
+  method.addEventListener('change',()=>{
+   const cashFields=form.querySelector('[data-cash-fields]');
+   cashFields.hidden=method.value!=='cash';
+   cashFields.querySelector('[name="amount_tendered"]').required=method.value==='cash';
+   form.querySelector('[data-reference-fields]').hidden=method.value==='cash';
+  });
+  method.dispatchEvent(new Event('change'));
+ });
 }
-function onlineOrderCard(order){
+function onlineOrderCard(order,payment,refunded=0){
  const date=new Date(order.created_at).toLocaleString('en-PH',{timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'short'});
  const statusLabel={pending:'Needs confirmation',accepted:'Accepted',rejected:'Declined',new:'In kitchen',preparing:'Preparing',ready:'Ready',served:'Completed',void:'Voided'}[order.status]||order.status;
  const isPending=order.status==='pending';
+ const paid=Boolean(payment);
+ const fullyRefunded=paid&&Number(payment.amount)>0&&refunded>=Number(payment.amount);
+ const partiallyRefunded=paid&&refunded>0&&!fullyRefunded;
+ const paymentLabel=paid
+  ?fullyRefunded?`Fully refunded · ${esc(payment.payment_method)}`:partiallyRefunded?`Partially refunded · ${esc(payment.payment_method)}`:`Payment received · ${esc(payment.payment_method)}`
+  :`Preferred · ${esc(order.payment_method)}${order.status==='accepted'?' · unpaid':' · not collected'}`;
  return `<article class="online-order-card ${isPending?'online-order-pending':''}">
   <div class="online-order-top"><div><span class="online-order-reference">${esc(order.public_reference)}</span><span class="pill ${isPending?'orange':order.status==='rejected'?'red':'green'}">${esc(statusLabel)}</span></div><time>${esc(date)}</time></div>
   <div class="online-order-customer"><b>${esc(order.customer_name)}</b><a href="tel:${esc(order.customer_phone)}">${esc(order.customer_phone)}</a></div>
-  <div class="online-order-tags"><span class="pill blue">${order.fulfillment_type==='delivery'?'Delivery':'Pickup'}</span><span class="pill">${order.payment_method==='gcash'?'GCash · collect manually':'Cash · collect on fulfillment'}</span></div>
+  <div class="online-order-tags"><span class="pill blue">${order.fulfillment_type==='delivery'?'Delivery':'Pickup'}</span><span class="pill">${paymentLabel}</span></div>
   <ul class="online-order-items">${(order.online_order_items||[]).map(item=>`<li><span><b>${Number(item.quantity)}×</b> ${esc(item.product_name)}</span><b>${peso(Number(item.quantity)*Number(item.unit_price))}</b></li>`).join('')}</ul>
   ${order.fulfillment_type==='delivery'?`<div class="online-order-address"><b>Delivery address</b><span>${esc(order.delivery_address)}</span>${order.delivery_landmark?`<small>Landmark: ${esc(order.delivery_landmark)}</small>`:''}</div>`:''}
   ${order.notes?`<div class="ticket-note"><b>Customer note:</b> ${esc(order.notes)}</div>`:''}
   <div class="online-order-total"><span>${order.delivery_fee?`Subtotal ${peso(order.subtotal)} + delivery ${peso(order.delivery_fee)}`:'Order total'}</span><b>${peso(order.total)}</b></div>
   ${isPending?`<div class="online-order-actions"><button class="primary" type="button" data-accept-online="${esc(order.id)}">Accept & send to kitchen</button><button class="secondary" type="button" data-reject-online="${esc(order.id)}">Decline</button></div>`:''}
+  ${order.status==='accepted'&&!paid&&order.sales_order_id?`<details class="online-payment-record"><summary>Record payment received</summary><form class="form-grid" data-record-online-payment="${esc(order.sales_order_id)}" data-order-total="${Number(order.total)}"><div><label>Actual method received</label><select name="payment_method"><option value="cash">Cash</option><option value="gcash">GCash</option><option value="card">Card</option></select></div><div data-reference-fields hidden><label>Reference (optional)</label><input name="external_reference" maxlength="120"></div><div class="full" data-cash-fields><label>Cash received (₱)</label><input name="amount_tendered" type="number" min="${Number(order.total).toFixed(2)}" step="0.01" value="${Number(order.total).toFixed(2)}" required></div><div class="full"><button class="primary wide" type="submit">Confirm payment received</button></div></form></details>`:''}
  </article>`;
+}
+async function recordOnlineOrderPayment(event){
+ event.preventDefault();
+ const form=event.currentTarget,values=Object.fromEntries(new FormData(form));
+ const paymentMethod=values.payment_method;
+ const amountTendered=paymentMethod==='cash'?Number(values.amount_tendered):null;
+ if(paymentMethod==='cash'&&(!Number.isFinite(amountTendered)||amountTendered<Number(form.dataset.orderTotal))){
+  appMessage('Cash received must be at least the order total.');return;
+ }
+ const button=form.querySelector('button[type="submit"]');button.disabled=true;
+ try{
+  const {error}=await client.rpc('record_online_order_payment',{
+   p_order_id:form.dataset.recordOnlinePayment,p_payment_method:paymentMethod,
+   p_amount_tendered:amountTendered,
+   p_external_reference:paymentMethod==='cash'?null:values.external_reference.trim()||null
+  });
+  if(error)dbError(error);
+  appMessage('Payment recorded as received.',false);openPage('online-orders');
+ }catch(error){appMessage('Could not record payment: '+error.message);button.disabled=false;}
 }
 async function acceptOnlineOrder(button){
  const orderId=button.dataset.acceptOnline;
@@ -448,13 +509,14 @@ function updatePaymentDetails(){
    $('cashChange').textContent='Change: '+peso(Math.max(0,tendered-cartTotal()));
   });
  }else{
-  target.innerHTML=`<label for="paymentReference">${method==='gcash'?'GCash reference (optional)':'Card reference (optional)'}</label><input id="paymentReference" maxlength="120">`;
+  target.innerHTML=`<label for="paymentReference">${method==='gcash'?'GCash reference (optional)':'Card reference (optional)'}</label><input id="paymentReference" maxlength="120"><p class="hint">Verify that the payment was received before completing this sale.</p>`;
  }
 }
 async function placeOrder(){
  const button=$('placeOrder'),items=[...cart.values()].map(({product,quantity})=>({product_id:product.id,quantity}));
  if(!items.length){appMessage('Add at least one item first.');return;}
  const paymentMethod=$('paymentMethod').value;
+ if(paymentMethod!=='cash'&&!window.confirm(`Confirm that the ${paymentMethod.toUpperCase()} payment has been received and verified before recording this sale?`))return;
  const amountTendered=paymentMethod==='cash'?Number($('cashTendered').value):null;
  if(paymentMethod==='cash'&&(!Number.isFinite(amountTendered)||amountTendered<cartTotal())){
   appMessage('Cash received must be at least the order total.');return;
@@ -478,9 +540,57 @@ async function renderRecentOrders(){
  const {data,error}=await client.from('sales_orders').select('id,order_number,status,total,payment_method,order_type,created_at')
   .order('created_at',{ascending:false}).limit(8);
  if(error)dbError(error);
+ const orders=data||[],orderIds=orders.map(order=>order.id);
+ let paymentsByOrder=new Map(),refundsByPayment=new Map();
+ if(orderIds.length){
+  const {data:payments,error:paymentsError}=await client.from('payments')
+   .select('id,order_id,payment_method,amount').in('order_id',orderIds);
+  if(paymentsError)dbError(paymentsError);
+  paymentsByOrder=new Map((payments||[]).map(payment=>[payment.order_id,payment]));
+  if(['owner_admin','manager'].includes(profile.role)&&payments?.length){
+   const {data:refunds,error:refundsError}=await client.from('payment_refunds')
+    .select('payment_id,amount').in('payment_id',payments.map(payment=>payment.id));
+   if(refundsError)dbError(refundsError);
+   refundsByPayment=new Map();
+   for(const refund of refunds||[]){
+    refundsByPayment.set(refund.payment_id,(refundsByPayment.get(refund.payment_id)||0)+Number(refund.amount));
+   }
+  }
+ }
  const target=$('recentOrders');if(!target)return;
- target.className=data?.length?'table-wrap':'empty';
- target.innerHTML=data?.length?`<table><thead><tr><th>Order</th><th>Time</th><th>Status</th><th>Payment</th><th class="right">Total</th></tr></thead><tbody>${data.map(row=>`<tr><td>#${row.order_number}</td><td>${new Date(row.created_at).toLocaleTimeString()}</td><td><span class="pill">${esc(row.status)}</span></td><td>${esc(row.payment_method)}</td><td class="right">${peso(row.total)}</td></tr>`).join('')}</tbody></table>`:'No orders yet.';
+ const canRefund=['owner_admin','manager'].includes(profile.role);
+ target.className=orders.length?'table-wrap':'empty';
+ target.innerHTML=orders.length?`<table><thead><tr><th>Order</th><th>Time</th><th>Status</th><th>Payment</th><th class="right">Total</th>${canRefund?'<th>Action</th>':''}</tr></thead><tbody>${orders.map(row=>{
+  const payment=paymentsByOrder.get(row.id),refunded=payment?refundsByPayment.get(payment.id)||0:0;
+  const refundable=payment?Math.max(0,Number(payment.amount)-refunded):0;
+  const fullyRefunded=payment&&Number(payment.amount)>0&&refundable===0;
+  return `<tr><td>#${row.order_number}</td><td>${new Date(row.created_at).toLocaleTimeString('en-PH',{timeZone:'Asia/Manila'})}</td><td><span class="pill">${esc(row.status)}</span></td><td>${payment?`<span class="pill ${fullyRefunded?'orange':'green'}">${fullyRefunded?`Fully refunded · ${esc(payment.payment_method)}`:`Received · ${esc(payment.payment_method)}`}</span>${refunded?`<small class="subtext">Refunded ${peso(refunded)}</small>`:''}`:'<span class="pill">Not recorded</span>'}</td><td class="right">${peso(row.total)}</td>${canRefund?`<td>${refundable>0?`<button class="secondary actions-button" type="button" data-refund-order="${esc(row.id)}" data-refund-remaining="${refundable.toFixed(2)}">Refund</button>`:'—'}</td>`:''}</tr>`;
+ }).join('')}</tbody></table>`:'No orders yet.';
+ target.querySelectorAll('[data-refund-order]').forEach(button=>button.addEventListener('click',()=>recordRecentOrderRefund(button)));
+}
+async function recordRecentOrderRefund(button){
+ const remaining=Number(button.dataset.refundRemaining);
+ const enteredAmount=window.prompt(`Refund amount (up to ${peso(remaining)}):`,remaining.toFixed(2));
+ if(enteredAmount===null)return;
+ const amount=Number(enteredAmount);
+ if(!Number.isFinite(amount)||amount<=0||amount>remaining){
+  appMessage('Enter a positive amount no greater than the remaining refundable balance.');return;
+ }
+ const reason=window.prompt('Reason for this refund (required):');
+ if(reason===null)return;
+ if(!reason.trim()){
+  appMessage('A refund reason is required.');return;
+ }
+ button.disabled=true;
+ try{
+  const {error}=await client.rpc('record_payment_refund',{
+   p_order_id:button.dataset.refundOrder,p_amount:amount,p_reason:reason.trim()
+  });
+  if(error)dbError(error);
+ }catch(error){appMessage('Could not record refund: '+error.message);button.disabled=false;return;}
+ appMessage('Refund recorded.',false);
+ try{await renderRecentOrders();}
+ catch(error){appMessage('Refund recorded, but recent orders could not refresh: '+error.message);}
 }
 async function renderInventory(){
  const canManageInventory=['owner_admin','manager'].includes(profile.role);
@@ -721,14 +831,15 @@ async function createStaff(event){
  finally{if(button)button.disabled=false;}
 }
 async function renderExpenses(){
- const {data,error}=await client.from('expenses').select('id,category,description,amount,payment_method,spent_at,created_at').order('spent_at',{ascending:false}).limit(100);
+ const {data,error}=await client.from('expenses').select('id,category,description,amount,payment_method,spent_at,created_at').order('spent_at',{ascending:false}).order('created_at',{ascending:false}).limit(100);
  if(error)dbError(error);
- const today=manilaDateString();
- const total=(data||[]).filter(row=>row.spent_at===today).reduce((sum,row)=>sum+Number(row.amount),0);
+ const today=manilaDateString(),tomorrow=shiftDateString(today,1);
+ const report=await getOperationalReport(today,tomorrow);
+ const total=Number(report.expenses.total);
  $('pageContent').innerHTML=`<div class="page-heading module-heading"><div><span class="inventory-item-label">OPERATING COSTS</span><h2>Expenses</h2><p>Track spending by category, date, and payment method.</p></div></div>
   <div class="expense-summary stat"><div class="stat-top"><div class="stat-label">Recorded today · Manila time</div><span class="stat-icon">−</span></div><div class="stat-value">${peso(total)}</div><p class="stat-caption">Expenses for ${today}</p></div>
   <section class="panel module-panel expense-form-panel"><div class="module-form-heading"><span class="module-form-icon">₱</span><div><h2>Record expense</h2><p>Keep a note of each business expense.</p></div></div><form id="expenseForm" class="form-grid"><div><label>Category</label><input name="category" maxlength="80" placeholder="Utilities, rent, supplies" required></div><div><label>Amount (₱)</label><input name="amount" type="number" min="0.01" step="0.01" required></div><div class="full"><label>Description</label><input name="description" maxlength="240" required></div><div><label>Payment method</label><select name="payment_method"><option value="cash">Cash</option><option value="gcash">GCash</option><option value="card">Card</option><option value="other">Other</option></select></div><div><label>Date</label><input name="spent_at" type="date" value="${today}" required></div><div class="full"><button class="primary wide">Save expense</button></div></form></section>
-  <section class="panel module-panel"><div class="section-heading"><div><h2>Recent expenses</h2><p>Latest recorded expenses.</p></div><span class="pill">${(data||[]).length} shown</span></div><div class="table-wrap">${expenseTable(data||[])}</div></section>`;
+  <section class="panel module-panel"><div class="section-heading"><div><h2>Recent expenses</h2><p>Latest 100 entries; the daily total above includes all records.</p></div><span class="pill">${(data||[]).length} shown</span></div><div class="table-wrap">${expenseTable(data||[])}</div></section>`;
  $('expenseForm').addEventListener('submit',createExpense);
 }
 function expenseTable(rows){
@@ -746,7 +857,7 @@ async function createExpense(event){
 }
 async function renderReports(){
  const today=manilaDateString(),weekAgo=shiftDateString(today,-6);
- $('pageContent').innerHTML=`<div class="page-heading module-heading"><div><span class="inventory-item-label">BUSINESS PERFORMANCE</span><h2>Sales & expense reports</h2><p>Branch totals for the selected date range. Voided orders are excluded from sales.</p></div></div>
+ $('pageContent').innerHTML=`<div class="page-heading module-heading"><div><span class="inventory-item-label">BUSINESS PERFORMANCE</span><h2>Sales & payment reports</h2><p>Order value/voids use order dates; payments/refunds use their recorded dates; expenses use expense dates. Outstanding online orders show the current all-date balance. This is not a profit report because cost of goods sold is not included.</p></div></div>
   <section class="panel module-panel report-filter-panel"><form id="reportForm" class="inline-form"><div><label>From</label><input name="start_date" type="date" value="${weekAgo}" required></div><div><label>Through</label><input name="end_date" type="date" value="${today}" required></div><button class="primary"><span aria-hidden="true">⌕</span> Run report</button></form></section><div id="reportResults" class="report-results empty">Loading report…</div>`;
  $('reportForm').addEventListener('submit',event=>{event.preventDefault();loadReport(event.currentTarget);});
  await loadReport($('reportForm'));
@@ -757,13 +868,14 @@ async function loadReport(form){
  const nextDay=shiftDateString(values.end_date,1);
  const target=$('reportResults');target.className='empty';target.textContent='Loading report…';
  try{
-  const {data,error}=await client.rpc('get_operational_report',{
-   p_start:manilaMidnightUtc(values.start_date),p_end:manilaMidnightUtc(nextDay),p_start_date:values.start_date,p_end_date:nextDay
-  });
-  if(error)dbError(error);
-  const sales=data.sales,expenses=data.expenses;
+  const data=await getOperationalReport(values.start_date,nextDay);
+  const orders=data.orders,payments=data.payments,outstanding=data.outstanding,expenses=data.expenses;
+  const cashNet=Number(payments.cash_collected)-Number(payments.cash_refunded);
+  const gcashNet=Number(payments.gcash_collected)-Number(payments.gcash_refunded);
+  const cardNet=Number(payments.card_collected)-Number(payments.card_refunded);
+  const voidedUnreturned=Number(payments.voided_unreturned_amount);
   target.className='';
-  target.innerHTML=`<div class="grid stats report-stats"><div class="stat stat-orders"><div class="stat-top"><div class="stat-label">Orders · excluding voids</div><span class="stat-icon">#</span></div><div class="stat-value">${Number(sales.order_count)}</div></div><div class="stat stat-sales"><div class="stat-top"><div class="stat-label">Net sales</div><span class="stat-icon">₱</span></div><div class="stat-value">${peso(sales.net_sales)}</div></div><div class="stat stat-payment"><div class="stat-top"><div class="stat-label">Cash sales</div><span class="stat-icon">₱</span></div><div class="stat-value">${peso(sales.cash_sales)}</div></div><div class="stat stat-expenses"><div class="stat-top"><div class="stat-label">GCash + card</div><span class="stat-icon">↗</span></div><div class="stat-value">${peso(Number(sales.gcash_sales)+Number(sales.card_sales))}</div></div></div><div class="grid two-col report-detail-grid"><section class="panel module-panel"><div class="section-heading"><div><h2>Payment breakdown</h2><p>Sales grouped by payment method.</p></div></div><div class="report-breakdown"><div><span>Cash</span><b>${peso(sales.cash_sales)}</b></div><div><span>GCash</span><b>${peso(sales.gcash_sales)}</b></div><div><span>Card</span><b>${peso(sales.card_sales)}</b></div></div><p class="report-void-count">Voided orders <b>${Number(sales.void_count)}</b></p></section><section class="panel module-panel"><div class="section-heading"><div><h2>Expenses</h2><p>Recorded in the selected date range.</p></div></div><div class="report-expense-total">${peso(expenses.total)}</div><p class="muted">${Number(expenses.expense_count)} recorded ${Number(expenses.expense_count)===1?'expense':'expenses'}</p></section></div>`;
+  target.innerHTML=`<div class="grid stats report-stats"><div class="stat stat-orders"><div class="stat-top"><div class="stat-label">Orders recorded · non-void</div><span class="stat-icon">#</span></div><div class="stat-value">${Number(orders.order_count)}</div><p class="stat-caption">${Number(orders.void_count)} voided in this order-date range</p></div><div class="stat stat-sales"><div class="stat-top"><div class="stat-label">Order value recorded</div><span class="stat-icon">₱</span></div><div class="stat-value">${peso(orders.recorded_order_value)}</div></div><div class="stat stat-payment"><div class="stat-top"><div class="stat-label">Net payments received</div><span class="stat-icon">✓</span></div><div class="stat-value">${peso(payments.net_collected)}</div><p class="stat-caption">${peso(payments.payments_collected)} received − ${peso(payments.refunds_issued)} refunded</p></div><div class="stat stat-expenses"><div class="stat-top"><div class="stat-label">Unpaid online · current</div><span class="stat-icon">…</span></div><div class="stat-value">${peso(outstanding.amount)}</div><p class="stat-caption">${Number(outstanding.unpaid_order_count)} open orders · all dates</p></div></div><div class="grid two-col report-detail-grid"><section class="panel module-panel"><div class="section-heading"><div><h2>Net receipts by method</h2><p>Actual payment records less refunds recorded in this period.</p></div></div><div class="report-breakdown"><div><span>Cash</span><b>${peso(cashNet)}</b></div><div><span>GCash</span><b>${peso(gcashNet)}</b></div><div><span>Card</span><b>${peso(cardNet)}</b></div></div>${voidedUnreturned>0?`<p class="report-void-count">Still collected on voided orders <b>${peso(voidedUnreturned)}</b></p>`:''}</section><section class="panel module-panel"><div class="section-heading"><div><h2>Expenses</h2><p>Based on expense date in the selected range.</p></div></div><div class="report-expense-total">${peso(expenses.total)}</div><p class="muted">${Number(expenses.expense_count)} recorded ${Number(expenses.expense_count)===1?'expense':'expenses'}</p></section></div>`;
  }catch(error){target.className='empty';target.textContent='Report could not be loaded.';appMessage(error.message);}
 }
 async function initialize(){

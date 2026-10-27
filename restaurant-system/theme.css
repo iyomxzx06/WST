@@ -697,6 +697,10 @@ dialog::backdrop {
 .online-order-total > b { color: #28343c; font-size: 13px; white-space: nowrap; }
 .online-order-actions { justify-content: flex-end; margin-top: 13px; }
 .online-order-actions button { min-height: 38px; font-size: 11px; }
+.online-payment-record { margin-top: 12px; padding: 11px 12px; border: 1px solid #e8ecee; border-radius: 9px; background: #f8fafb; }
+.online-payment-record summary { color: #355d78; cursor: pointer; font-size: 11px; font-weight: 750; }
+.online-payment-record .form-grid { padding-top: 8px; }
+.online-payment-record label { color: #52616a; }
 
 @media (max-width: 680px) {
   .online-orders-note { font-size: 11px; }
