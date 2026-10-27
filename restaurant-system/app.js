@@ -225,7 +225,7 @@ async function signOut(){
  if(realtimeChannel){await client.removeChannel(realtimeChannel);realtimeChannel=null;}
  window.clearTimeout(realtimeTimer);
  profile=null;cart.clear();checkoutAttempt={signature:'',key:''};
- $('appScreen').classList.add('hidden');$('bootstrapScreen').classList.add('hidden');$('loginScreen').classList.remove('hidden');
+ window.location.assign(new URL('../order/',window.location.href).toString());
 }
 function subscribeToBranchChanges(){
  if(realtimeChannel)client.removeChannel(realtimeChannel);

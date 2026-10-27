@@ -125,6 +125,15 @@ button:not(.primary):not(.nav-button):not(.text-button):not(.danger):not(.succes
   box-shadow: 0 6px 15px rgb(223 86 51 / 20%);
 }
 
+.brand-mark.logo-mark {
+  display: block;
+  flex: 0 0 auto;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #fff;
+  object-fit: cover;
+}
+
 .eyebrow {
   letter-spacing: .16em;
 }
@@ -1521,6 +1530,12 @@ body,
   box-shadow: 0 8px 20px rgb(227 76 41 / 32%);
 }
 
+.login-story-brand .brand-mark.logo-mark {
+  border: 2px solid rgb(255 255 255 / 90%);
+  background: #fff;
+  box-shadow: 0 8px 20px rgb(0 0 0 / 24%);
+}
+
 .login-story-brand small {
   display: block;
   margin-top: 3px;
@@ -1687,6 +1702,15 @@ body,
   box-shadow: 0 8px 18px rgb(221 70 42 / 22%);
 }
 
+.login-card > .brand-mark.logo-mark {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 15px;
+  border: 2px solid #f4e3d6;
+  background: #fff;
+  box-shadow: 0 8px 18px rgb(112 52 31 / 14%);
+}
+
 .login-card > .eyebrow {
   color: #bb472e;
   font-size: 10px;
@@ -1750,6 +1774,12 @@ body,
 
 .small-mark {
   background: linear-gradient(145deg, #fa773d, #d94128);
+}
+
+.small-mark.logo-mark {
+  border: 1px solid rgb(255 255 255 / 85%);
+  background: #fff;
+  box-shadow: 0 5px 13px rgb(0 0 0 / 23%);
 }
 
 .branch-label {

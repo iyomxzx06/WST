@@ -2,12 +2,12 @@
   "redirects": [
     {
       "source": "/index.html",
-      "destination": "/restaurant-system/",
+      "destination": "/order/",
       "permanent": false
     },
     {
       "source": "/",
-      "destination": "/restaurant-system/",
+      "destination": "/order/",
       "permanent": false
     }
   ]

@@ -15,6 +15,8 @@ let currentAttempt = null;
 let trackingToken = '';
 let trackingTimer = 0;
 let trackingBusy = false;
+let menuFilter = 'all';
+let submittingOrder = false;
 
 function showMessage(message, isError = true) {
   const target = $('storeMessage');
@@ -38,17 +40,27 @@ function fulfillmentType() {
 
 function updateTotals() {
   const subtotal = cartSubtotal();
+  const count = [...cart.values()].reduce((total, item) => total + item.quantity, 0);
   const fee = fulfillmentType() === 'delivery' && cart.size ? deliveryFee : 0;
   $('subtotal').textContent = money(subtotal);
   $('deliveryTotalRow').classList.toggle('hidden', fee === 0);
   $('orderTotal').textContent = money(subtotal + fee);
-  $('submitOrder').disabled = cart.size === 0;
+  $('submitOrder').disabled = cart.size === 0 || submittingOrder;
+  if (!$('submitOrder').classList.contains('is-loading')) {
+    $('submitOrder').querySelector('span:first-child').textContent = 'Send order request';
+  }
+  $('mobileCartTotal').textContent = money(subtotal + fee);
+  $('menuCartTotal').textContent = money(subtotal);
+  $('menuCartLabel').textContent = `Your order · ${count}`;
 }
 
 function renderCart() {
   const items = [...cart.values()];
   const count = items.reduce((total, item) => total + item.quantity, 0);
   $('cartCount').textContent = String(count);
+  $('mobileCartCount').textContent = String(count);
+  $('mobileCartLabel').textContent = count ? `${count} ${count === 1 ? 'item' : 'items'} in your basket` : 'Your basket is empty';
+  $('mobileCartBar').classList.toggle('hidden', count === 0);
   if (!items.length) {
     $('cartItems').innerHTML = '<div class="cart-empty"><span aria-hidden="true">＋</span><b>Your basket is waiting.</b><small>Add a burger or an extra from the menu.</small></div>';
   } else {
@@ -88,25 +100,133 @@ function addToCart(productId) {
   else cart.set(product.id, { product, quantity: 1 });
   clearMessage();
   renderCart();
+  document.querySelectorAll('[data-add]').forEach(addButton => {
+    if (addButton.dataset.add !== product.id) return;
+    const original = addButton.innerHTML;
+    addButton.innerHTML = 'Added <span aria-hidden="true">✓</span>';
+    addButton.classList.add('just-added');
+    window.setTimeout(() => {
+      if (!addButton.isConnected) return;
+      addButton.innerHTML = original;
+      addButton.classList.remove('just-added');
+    }, 1000);
+  });
+}
+
+function burgerVariant(product) {
+  const labeled = product.name.match(/^B([1-4])\s*-\s*(.+?)\s*-\s*(Single|B1T1)$/i);
+  if (labeled) return { number: labeled[1], variant: labeled[3].toUpperCase() === 'B1T1' ? 'B1T1' : 'Single' };
+  const standard = product.name.match(/^(Classic|Cheese|Deluxe|Double Cheese) Burger\s*-\s*(Single|B1T1)$/i);
+  if (!standard) return null;
+  return {
+    number: { classic: '1', cheese: '2', deluxe: '3', 'double cheese': '4' }[standard[1].toLowerCase()],
+    variant: standard[2].toUpperCase() === 'B1T1' ? 'B1T1' : 'Single'
+  };
+}
+
+function burgerName(number) {
+  return { 1: 'Classic Burger', 2: 'Cheese Burger', 3: 'Deluxe Burger', 4: 'Double Cheese Burger' }[number];
+}
+
+function renderBurgerCard(number, variants) {
+  const productName = burgerName(number);
+  const sizeButtons = variants.map(product => {
+    const variant = burgerVariant(product).variant;
+    return `<button type="button" class="burger-size-button" data-add="${escapeHtml(product.id)}">
+      <span>${variant === 'B1T1' ? 'B1T1' : 'Single'}</span><b>${money(product.price)}</b><i aria-hidden="true">＋</i>
+    </button>`;
+  }).join('');
+  return `<article class="burger-card">
+    <div class="burger-photo-wrap">
+      <img class="burger-photo" src="../restaurant-system/images/B${number}.jpg" alt="${escapeHtml(`B${number} ${productName}`)}" loading="lazy">
+    </div>
+    <div class="burger-card-copy">
+      <span class="menu-card-kicker">HAVENS SIGNATURE</span>
+      <h3>${escapeHtml(productName)}</h3>
+      <p>Choose your size</p>
+      <div class="burger-sizes">${sizeButtons}</div>
+    </div>
+  </article>`;
+}
+
+function renderAddonCard(product, index) {
+  const name = escapeHtml(product.name);
+  return `<article class="addon-card">
+    <div class="addon-art addon-art-${index % 4}" aria-hidden="true"><span>${escapeHtml(product.name.slice(0, 1).toUpperCase())}</span></div>
+    <div class="addon-card-copy"><span class="menu-card-kicker">MAKE IT EXTRA</span><h3>${name}</h3><b>${money(product.price)}</b></div>
+    <button class="addon-add-button" type="button" data-add="${escapeHtml(product.id)}" aria-label="Add ${name} to your order">＋</button>
+  </article>`;
+}
+
+function wireAddButtons(container) {
+  container.querySelectorAll('[data-add]').forEach(button => button.addEventListener('click', () => addToCart(button.dataset.add)));
+}
+
+function renderFeatured() {
+  const burgers = new Map();
+  menuProducts.forEach(product => {
+    const variant = burgerVariant(product);
+    if (!variant) return;
+    if (!burgers.has(variant.number)) burgers.set(variant.number, []);
+    burgers.get(variant.number).push(product);
+  });
+  const cards = [...burgers.entries()]
+    .sort(([first], [second]) => Number(first) - Number(second))
+    .map(([number, variants]) => {
+      const product = variants.find(item => burgerVariant(item).variant === 'Single') || variants[0];
+      const variantName = burgerVariant(product).variant;
+      return `<article class="featured-card">
+        <img src="../restaurant-system/images/B${number}.jpg" alt="${escapeHtml(`B${number} ${burgerName(number)}`)}" loading="lazy">
+        <div class="featured-card-copy">
+          <span class="menu-card-kicker">B${number} · HAVENS SIGNATURE</span>
+          <h3>${escapeHtml(burgerName(number))}</h3>
+          <span>${variantName} · ${money(product.price)}</span>
+          <button type="button" data-add="${escapeHtml(product.id)}">Add to order <span aria-hidden="true">＋</span></button>
+        </div>
+      </article>`;
+    }).join('');
+  $('featuredGrid').innerHTML = cards || '<div class="featured-loading">Signature burgers are not available right now.</div>';
+  wireAddButtons($('featuredGrid'));
+  $('featuredGrid').querySelectorAll('img').forEach(image => image.addEventListener('error', () => {
+    image.classList.add('photo-unavailable');
+  }, { once: true }));
 }
 
 function renderMenu() {
-  $('menuCount').textContent = `${menuProducts.length} ${menuProducts.length === 1 ? 'item' : 'items'}`;
-  if (!menuProducts.length) {
+  const burgers = new Map();
+  const addons = [];
+  menuProducts.forEach(product => {
+    const variant = burgerVariant(product);
+    if (!variant) {
+      addons.push(product);
+      return;
+    }
+    if (!burgers.has(variant.number)) burgers.set(variant.number, []);
+    burgers.get(variant.number).push(product);
+  });
+  const burgerMarkup = [...burgers.entries()]
+    .sort(([first], [second]) => Number(first) - Number(second))
+    .map(([number, variants]) => renderBurgerCard(number, variants.sort((a, b) => {
+      const aRank = burgerVariant(a).variant === 'Single' ? 0 : 1;
+      const bRank = burgerVariant(b).variant === 'Single' ? 0 : 1;
+      return aRank - bRank;
+    })))
+    .join('');
+  const addonMarkup = addons.map(renderAddonCard).join('');
+  const visibleCount = menuFilter === 'burgers' ? burgers.size : menuFilter === 'addons' ? addons.length : burgers.size + addons.length;
+  $('menuCount').textContent = `${visibleCount} ${visibleCount === 1 ? 'choice' : 'choices'}`;
+  $('menuGrid').classList.toggle('addons-only', menuFilter === 'addons');
+  if (!visibleCount) {
     $('menuGrid').innerHTML = '<div class="menu-empty"><b>The menu is taking a quick break.</b><span>Please check back in a moment.</span></div>';
     return;
   }
-  $('menuGrid').innerHTML = menuProducts.map((product, index) => {
-    const name = escapeHtml(product.name);
-    const accent = index % 4;
-    return `<article class="menu-card menu-accent-${accent}">
-      <div class="menu-card-art" aria-hidden="true"><span>${escapeHtml(product.name.slice(0, 1).toUpperCase())}</span><i></i><b>HB</b></div>
-      <div class="menu-card-copy"><span class="menu-card-kicker">${product.name.toLowerCase().includes('burger') ? 'GRILL FAVORITE' : 'A LITTLE EXTRA'}</span><h3>${name}</h3>
-        <div class="menu-card-footer"><b>${money(product.price)}</b><button type="button" data-add="${escapeHtml(product.id)}" aria-label="Add ${name} to your order">Add <span aria-hidden="true">＋</span></button></div>
-      </div>
-    </article>`;
-  }).join('');
-  $('menuGrid').querySelectorAll('[data-add]').forEach(button => button.addEventListener('click', () => addToCart(button.dataset.add)));
+  $('menuGrid').innerHTML = `${menuFilter !== 'addons' && burgerMarkup ? `<div class="menu-group-heading"><div><b>Signature burgers</b><span>Find your favorite, fresh off the grill.</span></div></div>${burgerMarkup}` : ''}
+    ${menuFilter !== 'burgers' && addonMarkup ? `<div class="menu-group-heading addon-group-heading"><div><b>Make it extra</b><span>Add-ons for your burger.</span></div></div>${addonMarkup}` : ''}
+    ${!burgerMarkup && !addonMarkup ? '<div class="menu-empty"><b>No menu items are available right now.</b></div>' : ''}`;
+  wireAddButtons($('menuGrid'));
+  $('menuGrid').querySelectorAll('.burger-photo').forEach(image => image.addEventListener('error', () => {
+    image.closest('.burger-photo-wrap').classList.add('photo-unavailable');
+  }, { once: true }));
 }
 
 async function loadMenu() {
@@ -119,6 +239,7 @@ async function loadMenu() {
   menuProducts = data.products.filter(product => product && typeof product.id === 'string'
     && typeof product.name === 'string' && Number.isFinite(Number(product.price)) && Number(product.price) >= 0);
   $('branchName').textContent = data.branch_name || data.business_name || 'Freshly made, just for you';
+  renderFeatured();
   renderMenu();
 }
 
@@ -162,6 +283,7 @@ function clearCheckoutAttempt() {
 
 async function submitOrder(event) {
   event.preventDefault();
+  if (submittingOrder) return;
   clearMessage();
   if (!cart.size) {
     showMessage('Add at least one menu item before sending your order.');
@@ -182,6 +304,7 @@ async function submitOrder(event) {
     notes: String(fields.get('notes')).trim()
   };
   const button = $('submitOrder');
+  submittingOrder = true;
   button.disabled = true;
   button.classList.add('is-loading');
   button.querySelector('span:first-child').textContent = 'Sending your request…';
@@ -210,6 +333,7 @@ async function submitOrder(event) {
   } catch (error) {
     showMessage(error.message || 'The order request could not be sent. Please try again.');
   } finally {
+    submittingOrder = false;
     button.classList.remove('is-loading');
     button.querySelector('span:first-child').textContent = 'Send order request';
     updateTotals();
@@ -230,6 +354,10 @@ const trackingLabels = {
 async function loadTracking(token, knownReference = '') {
   trackingToken = token;
   window.clearInterval(trackingTimer);
+  document.body.classList.add('tracking-mode');
+  const nextUrl = new URL(window.location.href);
+  nextUrl.hash = `track=${token}`;
+  window.history.replaceState(null, '', nextUrl);
   $('storefront').classList.add('hidden');
   $('confirmationScreen').classList.remove('hidden');
   $('confirmationScreen').focus();
@@ -281,6 +409,19 @@ async function copyTrackingLink() {
   }
 }
 
+function trackingTokenFromInput(value) {
+  const input = value.trim();
+  if (/^[0-9a-f]{64}$/i.test(input)) return input.toLowerCase();
+  try {
+    const url = new URL(input, window.location.origin);
+    if (!['http:', 'https:'].includes(url.protocol)) return '';
+    const token = new URLSearchParams(url.hash.slice(1)).get('track') || '';
+    return /^[0-9a-f]{64}$/i.test(token) ? token.toLowerCase() : '';
+  } catch {
+    return '';
+  }
+}
+
 function initializeSupabase() {
   const config = window.HAVENS_SUPABASE_CONFIG;
   if (!window.supabase?.createClient || !config?.url || !config?.publishableKey) {
@@ -293,23 +434,59 @@ async function initialize() {
   try {
     initializeSupabase();
     $('orderForm').addEventListener('submit', submitOrder);
+    const updateStoreNav = () => {
+      const currentHash = window.location.hash === '#track-order' ? '#track-order'
+        : window.location.hash.startsWith('#track=') ? '#track-order'
+          : window.location.hash || '#home';
+      document.querySelectorAll('.store-nav a').forEach(link => {
+        if (link.hash === currentHash) link.setAttribute('aria-current', 'page');
+        else link.removeAttribute('aria-current');
+      });
+    };
+    window.addEventListener('hashchange', updateStoreNav);
+    updateStoreNav();
+    $('trackingForm').addEventListener('submit', async event => {
+      event.preventDefault();
+      const token = trackingTokenFromInput($('trackingLink').value);
+      if (!token) {
+        $('trackingLookupMessage').textContent = 'Enter a valid private tracking link or 64-character code.';
+        $('trackingLookupMessage').classList.add('error');
+        return;
+      }
+      $('trackingLookupMessage').textContent = '';
+      $('trackingLookupMessage').classList.remove('error');
+      await loadTracking(token);
+    });
     $('orderForm').querySelectorAll('[name="fulfillment_type"],[name="payment_method"]').forEach(input => {
       input.addEventListener('change', updateFulfillmentFields);
     });
+    $('menuFilters').querySelectorAll('[data-menu-filter]').forEach(button => button.addEventListener('click', () => {
+      menuFilter = button.dataset.menuFilter;
+      $('menuFilters').querySelectorAll('[data-menu-filter]').forEach(filter => {
+        const active = filter === button;
+        filter.classList.toggle('active', active);
+        filter.setAttribute('aria-pressed', String(active));
+      });
+      renderMenu();
+    }));
     $('refreshTracking').addEventListener('click', refreshTracking);
     $('copyTrackingLink').addEventListener('click', copyTrackingLink);
     renderCart();
     updateFulfillmentFields();
+    document.querySelectorAll('.store-nav a').forEach(link => link.addEventListener('click', () => {
+      document.querySelectorAll('.store-nav a').forEach(item => item.removeAttribute('aria-current'));
+      link.setAttribute('aria-current', 'page');
+    }));
     const token = new URLSearchParams(window.location.hash.slice(1)).get('track');
     if (token && /^[0-9a-f]{64}$/.test(token)) {
       await loadTracking(token);
       return;
     }
-    if (window.location.hash) history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
     await loadMenu();
   } catch (error) {
     showMessage(error.message || 'Online ordering is temporarily unavailable.');
     $('menuCount').textContent = 'Menu unavailable';
+    $('featuredGrid').innerHTML = '<div class="featured-loading">The burger lineup could not be loaded.</div>';
     $('menuGrid').innerHTML = '<button class="secondary menu-retry" type="button">Try loading the menu again</button>';
     $('menuGrid').querySelector('button').addEventListener('click', async () => {
       try { await loadMenu(); } catch (retryError) { showMessage(retryError.message || 'The menu could not be loaded.'); }
