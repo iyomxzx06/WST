@@ -9,7 +9,9 @@ const NAV_ITEMS=[
  {id:'kitchen',label:'Kitchen display',icon:'◷',roles:['owner_admin','manager','kitchen','cashier']},
  {id:'staff',label:'Staff & access',icon:'♙',roles:['owner_admin']},
  {id:'expenses',label:'Expenses',icon:'₱',roles:['owner_admin','manager']},
- {id:'reports',label:'Reports',icon:'▥',roles:['owner_admin','manager']}
+ {id:'reports',label:'Reports',icon:'▥',roles:['owner_admin','manager']},
+ {id:'cash-closing',label:'Cash closing',icon:'▣',roles:['owner_admin','manager','cashier']},
+ {id:'audit',label:'Audit log',icon:'≡',roles:['owner_admin','manager']}
 ];
 const $=id=>document.getElementById(id);
 const esc=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -33,8 +35,8 @@ function shiftDateString(dateString,days){
  const date=new Date(Date.UTC(year,month-1,day+days));
  return `${date.getUTCFullYear()}-${String(date.getUTCMonth()+1).padStart(2,'0')}-${String(date.getUTCDate()).padStart(2,'0')}`;
 }
-let client=null,clientConfig=null,profile=null,activePage='overview',cart=new Map(),products=[],ingredients=[],suppliers=[],realtimeChannel=null,realtimeTimer=0,pageLoadToken=0;
-let checkoutAttempt={signature:'',key:''};
+let client=null,clientConfig=null,profile=null,activePage='overview',cart=new Map(),products=[],ingredients=[],suppliers=[],realtimeChannel=null,realtimeTimer=0,pageLoadToken=0,queuedPage='';
+let checkoutAttempt={signature:'',key:''},lastReportData=null;
 let catalogAutoImportInProgress=false;
 const authCallbackParams=new URLSearchParams(window.location.hash.slice(1));
 const authQueryParams=new URLSearchParams(window.location.search);
@@ -60,7 +62,12 @@ function loadConfig(){
  try{return JSON.parse(localStorage.getItem(CONFIG_KEY)||'{}');}
  catch{return {};}
 }
-function dbError(error){throw new Error(error?.message||'The database request failed.');}
+function dbError(error){
+ const message=error?.message||'The database request failed.';
+ if(error?.code==='PGRST202'&&message.includes('list_readonly_inventory'))
+  throw new Error('Inventory access is not configured yet. Run migrations/014_restore_readonly_inventory.sql in Supabase, then refresh.');
+ throw new Error(message);
+}
 function clearAuthCallback(){
  const url=new URL(window.location.href);
  ['code','type','error','error_code','error_description'].forEach(key=>url.searchParams.delete(key));
@@ -244,7 +251,15 @@ function refreshActiveModule(){
   if(profile&&['overview','pos','online-orders','inventory','kitchen','reports'].includes(activePage))openPage(activePage);
  },250);
 }
+function openQueuedPage(currentPage){
+ const nextPage=queuedPage;queuedPage='';
+ if(nextPage&&nextPage!==currentPage)openPage(nextPage);
+}
 function openPage(page){
+ if($('pageContent')?.getAttribute('aria-busy')==='true'){
+  queuedPage=page;
+  return;
+ }
  const item=NAV_ITEMS.find(candidate=>candidate.id===page&&candidate.roles.includes(profile?.role));
  if(!item){
   const firstAllowedPage=NAV_ITEMS.find(candidate=>candidate.roles.includes(profile?.role));
@@ -253,18 +268,20 @@ function openPage(page){
  }
  activePage=page;buildNavigation();
  $('pageTitle').textContent=NAV_ITEMS.find(x=>x.id===page)?.label||'Overview';
- const renderers={overview:renderOverview,pos:renderPos,'online-orders':renderOnlineOrders,inventory:renderInventory,purchasing:renderPurchasing,kitchen:renderKitchen,staff:renderStaff,expenses:renderExpenses,reports:renderReports};
+  const renderers={overview:renderOverview,pos:renderPos,'online-orders':renderOnlineOrders,inventory:renderInventory,purchasing:renderPurchasing,kitchen:renderKitchen,staff:renderStaff,expenses:renderExpenses,reports:renderReports,'cash-closing':renderCashClosing,audit:renderAudit};
  const content=$('pageContent'),loadToken=++pageLoadToken;
  content.setAttribute('aria-busy','true');
  content.innerHTML='<div class="loading-state" role="status"><span class="loading-spinner" aria-hidden="true"></span><span>Loading your workspace…</span></div>';
  Promise.resolve().then(()=>renderers[page]()).then(()=>{
   if(loadToken===pageLoadToken)content.setAttribute('aria-busy','false');
+  if(loadToken===pageLoadToken)openQueuedPage(page);
  }).catch(error=>{
   if(loadToken!==pageLoadToken)return;
   content.setAttribute('aria-busy','false');
   content.innerHTML=`<div class="load-error" role="alert"><b>This section could not be loaded.</b><span>${esc(error.message||'Please try again.')}</span><button class="secondary" id="retryModule" type="button">Try again</button></div>`;
   $('retryModule').addEventListener('click',()=>openPage(page));
   appMessage(error.message||'Could not load this module.');
+  openQueuedPage(page);
  });
 }
 async function fetchRows(table,columns='*',order='created_at'){
@@ -290,7 +307,15 @@ async function renderOverview(){
  if(stock.error)dbError(stock.error);
  const low=(stock.data||[]).filter(x=>Number(x.stock_quantity)<=Number(x.reorder_level));
  const orders=report.orders,payments=report.payments,outstanding=report.outstanding;
- $('pageContent').innerHTML=`<div class="page-heading module-heading"><div><span class="inventory-item-label">MANILA · ${today}</span><h2>Today's overview</h2><p>Quick view of sales, stock, kitchen activity, and spending.</p></div></div>
+ const quickActions=[
+  {page:'pos',icon:'＋',title:'Start a sale',description:'Open the point of sale'},
+  {page:'online-orders',icon:'↗',title:'Online orders',description:'Review and update incoming orders'},
+  {page:'inventory',icon:'▤',title:'Check inventory',description:'Review stock and reorder alerts'},
+  {page:'expenses',icon:'₱',title:'Record expense',description:'Add an operating expense'},
+  {page:'reports',icon:'▥',title:'View reports',description:'Explore sales and payment totals'}
+ ].filter(action=>NAV_ITEMS.some(item=>item.id===action.page&&item.roles.includes(profile.role)));
+ $('pageContent').innerHTML=`<div class="page-heading module-heading"><div><span class="inventory-item-label">MANILA · ${today}</span><h2>Today's overview</h2><p>Quick view of sales, stock, kitchen activity, and spending.</p></div><button id="refreshOverview" class="secondary refresh-button" type="button"><span aria-hidden="true">↻</span> Refresh</button></div>
+  <section class="panel dashboard-quick-panel" aria-labelledby="quickActionsTitle"><div class="section-heading"><div><h2 id="quickActionsTitle">Quick actions</h2><p>Jump straight to a common task.</p></div></div><div class="dashboard-quick-actions">${quickActions.map(action=>`<button class="dashboard-quick-action" type="button" data-dashboard-page="${action.page}"><span class="dashboard-quick-icon" aria-hidden="true">${action.icon}</span><span><b>${action.title}</b><small>${action.description}</small></span><span class="dashboard-quick-arrow" aria-hidden="true">›</span></button>`).join('')}</div></section>
   <div class="grid stats">
    <div class="stat stat-sales"><div class="stat-top"><div class="stat-label">Sales recorded today</div><span class="stat-icon">₱</span></div><div class="stat-value">${peso(orders.recorded_order_value)}</div><p class="stat-caption">${Number(orders.order_count)} non-void orders</p></div>
    <div class="stat stat-payment"><div class="stat-top"><div class="stat-label">Payments collected</div><span class="stat-icon">✓</span></div><div class="stat-value">${peso(payments.net_collected)}</div><p class="stat-caption">Net receipts after refunds</p></div>
@@ -299,7 +324,9 @@ async function renderOverview(){
    <div class="stat ${low.length?'stat-alert':'stat-stock'}"><div class="stat-top"><div class="stat-label">Low-stock items</div><span class="stat-icon">!</span></div><div class="stat-value">${low.length}</div><p class="stat-caption">${low.length?'Needs restocking':'Stock levels look good'}</p></div>
    <div class="stat stat-expenses"><div class="stat-top"><div class="stat-label">Expenses today</div><span class="stat-icon">−</span></div><div class="stat-value">${peso(report.expenses.total)}</div><p class="stat-caption">Recorded operating expenses</p></div>
   </div>
-  <section class="panel module-panel"><div class="section-heading"><div><h2>Stock alerts</h2><p>Ingredients at or below their reorder level.</p></div><span class="pill ${low.length?'orange':'green'}">${low.length} ${low.length===1?'item':'items'}</span></div>${low.length?`<div class="table-wrap"><table class="dashboard-stock-table"><thead><tr><th>Ingredient</th><th>On hand</th><th>Reorder at</th></tr></thead><tbody>${low.map(row=>`<tr><td><b>${esc(ingredientLabel(row.name))}</b></td><td><span class="stock-quantity-low">${Number(row.stock_quantity)} ${esc(row.unit)}</span></td><td>${Number(row.reorder_level)} ${esc(row.unit)}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty empty-success"><span class="empty-success-mark">✓</span><b>All stocked up</b><span>No ingredients are below their reorder level.</span></div>'}</section>`;
+  <section class="panel module-panel"><div class="section-heading"><div><h2>Stock alerts</h2><p>Ingredients at or below their reorder level.</p></div><span class="pill ${low.length?'orange':'green'}">${low.length} ${low.length===1?'item':'items'}</span></div>${low.length?`<div class="table-wrap"><table class="dashboard-stock-table"><thead><tr><th>Ingredient</th><th>On hand</th><th>Reorder at</th></tr></thead><tbody>${low.map(row=>`<tr><td><b>${esc(ingredientLabel(row.name))}</b></td><td><span class="stock-quantity-low">${Number(row.stock_quantity)} ${esc(row.unit)}</span></td><td>${Number(row.reorder_level)} ${esc(row.unit)}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty empty-success"><span class="empty-success-mark">✓</span><b>All stocked up</b><span>No ingredients are below their reorder level.</span></div>'}<button class="secondary dashboard-inventory-link" type="button" data-dashboard-page="inventory">Open inventory</button></section>`;
+ $('refreshOverview').addEventListener('click',()=>openPage('overview'));
+ $('pageContent').querySelectorAll('[data-dashboard-page]').forEach(button=>button.addEventListener('click',()=>openPage(button.dataset.dashboardPage)));
 }
 async function loadPosCatalog(){
  const {data,error}=await client.from('products').select('id,name,price').eq('active',true).order('name');
@@ -465,6 +492,13 @@ async function renderPos(){
   <section class="panel pos-cart-panel"><div class="section-heading"><div><h2>Your order</h2><p>Review items before checkout.</p></div><span id="cartCount" class="pill">0 items</span></div><div id="cartLines"></div><div class="checkout-fields"><label for="paymentMethod">Payment</label><select id="paymentMethod"><option value="cash">Cash</option><option value="gcash">GCash</option><option value="card">Card</option></select><div id="paymentDetails"></div><label for="orderType">Order type</label><select id="orderType"><option value="dine_in">Dine-in</option><option value="takeout">Takeout</option></select><label for="orderNotes">Notes</label><textarea id="orderNotes" maxlength="500" placeholder="Optional kitchen notes"></textarea><button id="placeOrder" class="primary wide" type="button">Place order</button></div></section></div>
   <section class="panel"><h2>Recent orders</h2><div id="recentOrders" class="empty">Loading orders…</div></section>`;
  $('pageContent').querySelectorAll('.product-photo').forEach(image=>image.addEventListener('error',()=>{image.hidden=true;},{once:true}));
+ const posMenuPanel=$('pageContent').querySelector('.pos-menu-panel');
+ const posSearch=document.createElement('input');posSearch.id='posProductSearch';posSearch.type='search';posSearch.placeholder='Search burgers and add-ons…';posSearch.autocomplete='off';posSearch.setAttribute('aria-label','Search POS products');
+ const posSearchLabel=document.createElement('label');posSearchLabel.htmlFor='posProductSearch';posSearchLabel.textContent='Find a product';posSearchLabel.className='visually-hidden';
+ posMenuPanel.querySelector('.section-heading').after(posSearchLabel,posSearch);
+ const posCategory=document.createElement('select');posCategory.id='posCategoryFilter';posCategory.setAttribute('aria-label','Filter POS products');posCategory.innerHTML='<option value="all">All burgers</option><option value="1">B1 Classic</option><option value="2">B2 Cheese</option><option value="3">B3 Deluxe</option><option value="4">B4 Double</option>';posMenuPanel.querySelector('.section-heading').after(posCategory);
+ const filterPosProducts=()=>{const query=posSearch.value.trim().toLowerCase(),category=posCategory.value;$('pageContent').querySelectorAll('[data-burger]').forEach(button=>{button.hidden=(query&&!button.textContent.toLowerCase().includes(query))||(category!=='all'&&button.dataset.burger!==category);});};
+ posSearch.addEventListener('input',filterPosProducts);posCategory.addEventListener('change',filterPosProducts);
  $('menuPosterOpen').addEventListener('click',showMenuPoster);
  $('pageContent').querySelectorAll('[data-burger]').forEach(button=>button.addEventListener('click',()=>{
   const number=button.dataset.burger;
@@ -494,6 +528,11 @@ function drawCart(){
   if(item?.quantity>1)item.quantity--;else cart.delete(button.dataset.remove);
   drawCart();
  }));
+ target.querySelectorAll('.cart-item-total').forEach((item,index)=>{
+  const line=lines[index];if(!line)return;
+  const plus=document.createElement('button');plus.className='icon-button add-cart';plus.type='button';plus.textContent='+';plus.dataset.addCart=line.product.id;plus.setAttribute('aria-label',`Add another ${line.product.name}`);item.append(plus);
+  plus.addEventListener('click',()=>{addProductToCart(line.product);drawCart();});
+ });
  updatePaymentDetails();
 }
 function cartTotal(){
@@ -537,7 +576,7 @@ async function placeOrder(){
  finally{if($('placeOrder'))$('placeOrder').disabled=false;}
 }
 async function renderRecentOrders(){
- const {data,error}=await client.from('sales_orders').select('id,order_number,status,total,payment_method,order_type,created_at')
+ const {data,error}=await client.from('sales_orders').select('id,order_number,status,total,payment_method,order_type,created_at,sales_order_items(product_name,quantity,unit_price)')
   .order('created_at',{ascending:false}).limit(8);
  if(error)dbError(error);
  const orders=data||[],orderIds=orders.map(order=>order.id);
@@ -567,6 +606,36 @@ async function renderRecentOrders(){
   return `<tr><td>#${row.order_number}</td><td>${new Date(row.created_at).toLocaleTimeString('en-PH',{timeZone:'Asia/Manila'})}</td><td><span class="pill">${esc(row.status)}</span></td><td>${payment?`<span class="pill ${fullyRefunded?'orange':'green'}">${fullyRefunded?`Fully refunded · ${esc(payment.payment_method)}`:`Received · ${esc(payment.payment_method)}`}</span>${refunded?`<small class="subtext">Refunded ${peso(refunded)}</small>`:''}`:'<span class="pill">Not recorded</span>'}</td><td class="right">${peso(row.total)}</td>${canRefund?`<td>${refundable>0?`<button class="secondary actions-button" type="button" data-refund-order="${esc(row.id)}" data-refund-remaining="${refundable.toFixed(2)}">Refund</button>`:'—'}</td>`:''}</tr>`;
  }).join('')}</tbody></table>`:'No orders yet.';
  target.querySelectorAll('[data-refund-order]').forEach(button=>button.addEventListener('click',()=>recordRecentOrderRefund(button)));
+  const orderTable=target.querySelector('table');
+  if(orderTable){
+   if(!canRefund){const header=document.createElement('th');header.textContent='Action';orderTable.tHead.rows[0].append(header);}
+   Array.from(orderTable.tBodies[0].rows).forEach((row,index)=>{
+    const cell=canRefund?row.lastElementChild:row.insertCell(-1);
+    const print=document.createElement('button');print.className='secondary actions-button';print.type='button';print.textContent='Print';print.dataset.printOrder=orders[index].id;cell.prepend(print);
+    print.addEventListener('click',()=>printOrderReceipt(orders[index]));
+    if(canRefund&&orders[index].status!=='void'){
+     const voidButton=document.createElement('button');voidButton.className='secondary actions-button';voidButton.type='button';voidButton.textContent='Void';voidButton.dataset.voidOrder=orders[index].id;cell.append(' ',voidButton);
+     voidButton.addEventListener('click',()=>voidSalesOrder(voidButton));
+    }
+   });
+  }
+}
+function printOrderReceipt(order){
+ const popup=window.open('','_blank','width=420,height=700');
+ if(!popup){appMessage('Allow pop-ups to print the receipt.');return;}
+ const items=(order.sales_order_items||[]).map(item=>`<tr><td>${esc(item.product_name)}</td><td>${Number(item.quantity)}</td><td class="right">${peso(Number(item.unit_price)*Number(item.quantity))}</td></tr>`).join('');
+ popup.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Receipt #${esc(order.order_number)}</title><style>body{font:14px Arial,sans-serif;width:320px;margin:24px auto;color:#111}h1{text-align:center;font-size:20px;margin:0 0 4px}p{text-align:center;margin:4px 0 16px;color:#555}table{width:100%;border-collapse:collapse}td{padding:6px 0;border-bottom:1px solid #ddd}td:nth-child(2){text-align:center;width:42px}.right{text-align:right}.total{font-weight:bold;font-size:17px;border-top:2px solid #111;border-bottom:0}</style></head><body><h1>HAVENS BURGER</h1><p>Order #${esc(order.order_number)}<br>${new Date(order.created_at).toLocaleString('en-PH',{timeZone:'Asia/Manila'})}</p><table>${items}<tr><td colspan="2" class="total">Total</td><td class="right total">${peso(order.total)}</td></tr></table><p>Thank you!</p></body></html>`);
+ popup.document.close();popup.focus();popup.print();
+}
+async function voidSalesOrder(button){
+ const reason=window.prompt('Reason for voiding this order (required):');
+ if(reason===null)return;
+ if(reason.trim().length<3){appMessage('A void reason is required.');return;}
+ button.disabled=true;
+ try{
+  const {error}=await client.rpc('void_sales_order',{p_order_id:button.dataset.voidOrder,p_reason:reason.trim()});
+  if(error)dbError(error);appMessage('Order voided and audit log recorded.',false);await renderRecentOrders();
+ }catch(error){appMessage('Could not void order: '+error.message);button.disabled=false;}
 }
 async function recordRecentOrderRefund(button){
  const remaining=Number(button.dataset.refundRemaining);
@@ -600,6 +669,9 @@ async function renderInventory(){
  const {data:inventoryRows,error:inventoryError}=await inventoryRequest;
  if(inventoryError)dbError(inventoryError);
  ingredients=inventoryRows||[];
+ const {data:movementRows,error:movementError}=await client.from('inventory_movements')
+  .select('id,ingredient_id,quantity_change,movement_type,note,created_at').order('created_at',{ascending:false}).limit(30);
+ if(movementError)dbError(movementError);
  const {data:catalogImport,error:catalogImportError}=await client.from('catalog_file_imports')
   .select('products_imported,products_skipped,imported_at').eq('branch_id',profile.branch_id).maybeSingle();
  if(catalogImportError)dbError(catalogImportError);
@@ -624,15 +696,20 @@ async function renderInventory(){
   ${canManageInventory?'<section class="notice inventory-opening-note">Update any ingredient counts you need, then press “Save all counts” once. Leave other counts unchanged. New inventory items start at 0.</section>':''}
   ${canManageInventory&&missingStockLabels(ingredients).length?`<section class="notice inventory-missing-note">Some standard inventory labels are missing: ${missingStockLabels(ingredients).map(esc).join(', ')}. Run the corrected migrations/004_inventory_stock_rules.sql in Supabase first, then refresh.</section>`:''}
   ${canManageInventory&&!catalogImport?`<section class="panel"><h2>Default menu</h2><p class="muted">The default catalog adds B1 Classic, B2 Cheese, B3 Deluxe, and B4 Double Cheese, each with Single and B1T1 options, plus the seven extras from hb.html. It skips existing same-name products and never changes current stock.</p></section>`:''}
-  <section class="panel"><h2>${canManageInventory?'Opening / current stock':'Current stock'}</h2>${canManageInventory?`<form id="stockCountForm"><div class="table-wrap">${ingredientTable(ingredients)}</div><button id="saveAllStockCounts" class="primary wide" type="submit">Save all counts</button></form>`:`<div class="table-wrap">${ingredientTable(ingredients,true)}</div>`}</section>
-  ${canManageInventory?`<section class="panel"><h2>Add POS product</h2><form id="productForm" class="form-grid"><div><label>Product name</label><input name="name" maxlength="120" required></div><div><label>Price (₱)</label><input name="price" type="number" min="0" step="0.01" required></div><div class="full"><button class="primary wide">Add product</button></div></form></section>
+  <section class="panel"><div class="section-heading"><div><h2>${canManageInventory?'Opening / current stock':'Current stock'}</h2><p>Search by ingredient name to find a stock item quickly.</p></div></div><label for="inventorySearch">Search inventory</label><input id="inventorySearch" type="search" placeholder="Buns, patties, cheese…" autocomplete="off">${canManageInventory?`<form id="stockCountForm"><div class="table-wrap">${ingredientTable(ingredients)}</div><button id="saveAllStockCounts" class="primary wide" type="submit">Save all counts</button></form>`:`<div class="table-wrap">${ingredientTable(ingredients,true)}</div>`}</section>
+  <section class="panel"><div class="section-heading"><div><h2>Recent stock movements</h2><p>The latest 30 stock changes for this branch.</p></div><span class="pill">${(movementRows||[]).length} shown</span></div>${inventoryMovementTable(movementRows||[],ingredients)}</section>
+  ${canManageInventory?`<section class="panel"><h2>Record wastage</h2><p class="muted">Use this for spoiled, damaged, or discarded stock.</p><form id="wasteForm" class="form-grid"><div><label>Ingredient</label><select name="ingredient_id" required>${ingredientOptions(ingredients)}</select></div><div><label>Quantity</label><input name="quantity" type="number" min="0.001" step="0.001" required></div><div class="full"><label>Reason</label><input name="note" maxlength="240" placeholder="Spoiled, damaged, or discarded" required></div><div class="full"><button class="secondary wide">Record wastage</button></div></form></section><section class="panel"><h2>Add POS product</h2><form id="productForm" class="form-grid"><div><label>Product name</label><input name="name" maxlength="120" required></div><div><label>Price (₱)</label><input name="price" type="number" min="0" step="0.01" required></div><div class="full"><button class="primary wide">Add product</button></div></form></section>
   <details class="panel inventory-custom-ingredient"><summary>Add another ingredient</summary><form id="ingredientForm" class="form-grid"><div><label>Ingredient name</label><input name="name" maxlength="120" required></div><div><label>Stock unit</label><input name="unit" maxlength="24" required></div><div><label>Opening stock</label><input name="starting_stock" type="number" min="0" step="0.001" value="0" required></div><div><label>Alert me when at</label><input name="reorder_level" type="number" min="0" step="0.001" value="0" required></div><div class="full"><label>Cost per unit (₱)</label><input name="unit_cost" type="number" min="0" step="0.0001" value="0"></div><div class="full"><button class="primary wide">Add ingredient</button></div></form></details>`:''}`;
  if(canManageInventory){
   $('ingredientForm').addEventListener('submit',createIngredient);
   $('productForm').addEventListener('submit',createProduct);
+   $('wasteForm').addEventListener('submit',recordWaste);
   if(!catalogImport)$('importHbCatalog').addEventListener('click',importHbCatalog);
   $('stockCountForm').addEventListener('submit',saveStockCounts);
  }
+  const inventoryFilter=document.createElement('select');inventoryFilter.id='inventoryStatusFilter';inventoryFilter.setAttribute('aria-label','Filter inventory status');inventoryFilter.innerHTML='<option value="all">All stock</option><option value="low">Low stock</option><option value="in">In stock</option><option value="out">Out of stock</option>';$('inventorySearch').after(inventoryFilter);
+  const filterInventory=()=>{const query=$('inventorySearch').value.trim().toLowerCase(),status=inventoryFilter.value;Array.from($('pageContent').querySelectorAll('.inventory-item')).forEach((item,index)=>{const row=ingredients[index],stock=Number(row?.stock_quantity||0),reorder=Number(row?.reorder_level||0),matchesStatus=status==='all'||(status==='low'&&stock<=reorder)||(status==='in'&&stock>reorder)||(status==='out'&&stock===0);item.hidden=(!matchesStatus)||(query&&!item.textContent.toLowerCase().includes(query));});};
+  $('inventorySearch').addEventListener('input',filterInventory);inventoryFilter.addEventListener('change',filterInventory);
 }
 async function importHbCatalog(){
  const accepted=window.confirm('Add the default menu and inventory stock rules? Existing same-name products will be skipped. Existing opening stock will not change; new inventory items start at 0. Sales history is not imported.');
@@ -667,6 +744,10 @@ function ingredientLabel(name){
   onion:'Onion',onions:'Onion',sauce:'Sauce',bacon:'Bacon'
  };
  return labels[normalized]||name;
+}
+function inventoryMovementTable(rows,ingredientRows){
+ const names=new Map(ingredientRows.map(row=>[row.id,ingredientLabel(row.name)]));
+ return rows.length?`<div class="table-wrap"><table><thead><tr><th>Time</th><th>Ingredient</th><th>Type</th><th class="right">Change</th><th>Note</th></tr></thead><tbody>${rows.map(row=>`<tr><td class="nowrap">${new Date(row.created_at).toLocaleString('en-PH',{timeZone:'Asia/Manila',dateStyle:'short',timeStyle:'short'})}</td><td>${esc(names.get(row.ingredient_id)||'Unknown ingredient')}</td><td><span class="pill">${esc(row.movement_type)}</span></td><td class="right ${Number(row.quantity_change)<0?'stock-quantity-low':''}>${Number(row.quantity_change)>0?'+':''}${Number(row.quantity_change)}</td><td>${esc(row.note||'—')}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">No stock movements recorded yet.</div>';
 }
 function missingStockLabels(rows){
  const known=new Set(rows.map(row=>ingredientLabel(row.name)));
@@ -714,6 +795,13 @@ async function createProduct(event){
   const {error}=await client.from('products').insert({branch_id:profile.branch_id,name:values.name.trim(),price:Number(values.price)});
   if(error)dbError(error);appMessage('POS product added.',false);await renderInventory();
  }catch(error){appMessage(error.message);}
+}
+async function recordWaste(event){
+ event.preventDefault();const values=Object.fromEntries(new FormData(event.currentTarget));
+ try{
+  const {error}=await client.rpc('record_inventory_waste',{p_ingredient_id:values.ingredient_id,p_quantity:Number(values.quantity),p_note:values.note.trim()});
+  if(error)dbError(error);appMessage('Inventory wastage recorded.',false);await renderInventory();
+ }catch(error){appMessage('Could not record wastage: '+error.message);}
 }
 async function renderPurchasing(){
  const [supplierRows,ingredientRows,orders]=await Promise.all([
@@ -860,6 +948,7 @@ async function renderReports(){
  $('pageContent').innerHTML=`<div class="page-heading module-heading"><div><span class="inventory-item-label">BUSINESS PERFORMANCE</span><h2>Sales & payment reports</h2><p>Order value/voids use order dates; payments/refunds use their recorded dates; expenses use expense dates. Outstanding online orders show the current all-date balance. This is not a profit report because cost of goods sold is not included.</p></div></div>
   <section class="panel module-panel report-filter-panel"><form id="reportForm" class="inline-form"><div><label>From</label><input name="start_date" type="date" value="${weekAgo}" required></div><div><label>Through</label><input name="end_date" type="date" value="${today}" required></div><button class="primary"><span aria-hidden="true">⌕</span> Run report</button></form></section><div id="reportResults" class="report-results empty">Loading report…</div>`;
  $('reportForm').addEventListener('submit',event=>{event.preventDefault();loadReport(event.currentTarget);});
+ const exportButton=document.createElement('button');exportButton.id='exportReportCsv';exportButton.className='secondary';exportButton.type='button';exportButton.textContent='Export CSV';exportButton.addEventListener('click',exportReportCsv);$('reportForm').append(exportButton);
  await loadReport($('reportForm'));
 }
 async function loadReport(form){
@@ -868,7 +957,7 @@ async function loadReport(form){
  const nextDay=shiftDateString(values.end_date,1);
  const target=$('reportResults');target.className='empty';target.textContent='Loading report…';
  try{
-  const data=await getOperationalReport(values.start_date,nextDay);
+   const data=await getOperationalReport(values.start_date,nextDay);lastReportData={data,startDate:values.start_date,endDate:values.end_date};
   const orders=data.orders,payments=data.payments,outstanding=data.outstanding,expenses=data.expenses;
   const cashNet=Number(payments.cash_collected)-Number(payments.cash_refunded);
   const gcashNet=Number(payments.gcash_collected)-Number(payments.gcash_refunded);
@@ -877,6 +966,40 @@ async function loadReport(form){
   target.className='';
   target.innerHTML=`<div class="grid stats report-stats"><div class="stat stat-orders"><div class="stat-top"><div class="stat-label">Orders recorded · non-void</div><span class="stat-icon">#</span></div><div class="stat-value">${Number(orders.order_count)}</div><p class="stat-caption">${Number(orders.void_count)} voided in this order-date range</p></div><div class="stat stat-sales"><div class="stat-top"><div class="stat-label">Order value recorded</div><span class="stat-icon">₱</span></div><div class="stat-value">${peso(orders.recorded_order_value)}</div></div><div class="stat stat-payment"><div class="stat-top"><div class="stat-label">Net payments received</div><span class="stat-icon">✓</span></div><div class="stat-value">${peso(payments.net_collected)}</div><p class="stat-caption">${peso(payments.payments_collected)} received − ${peso(payments.refunds_issued)} refunded</p></div><div class="stat stat-expenses"><div class="stat-top"><div class="stat-label">Unpaid online · current</div><span class="stat-icon">…</span></div><div class="stat-value">${peso(outstanding.amount)}</div><p class="stat-caption">${Number(outstanding.unpaid_order_count)} open orders · all dates</p></div></div><div class="grid two-col report-detail-grid"><section class="panel module-panel"><div class="section-heading"><div><h2>Net receipts by method</h2><p>Actual payment records less refunds recorded in this period.</p></div></div><div class="report-breakdown"><div><span>Cash</span><b>${peso(cashNet)}</b></div><div><span>GCash</span><b>${peso(gcashNet)}</b></div><div><span>Card</span><b>${peso(cardNet)}</b></div></div>${voidedUnreturned>0?`<p class="report-void-count">Still collected on voided orders <b>${peso(voidedUnreturned)}</b></p>`:''}</section><section class="panel module-panel"><div class="section-heading"><div><h2>Expenses</h2><p>Based on expense date in the selected range.</p></div></div><div class="report-expense-total">${peso(expenses.total)}</div><p class="muted">${Number(expenses.expense_count)} recorded ${Number(expenses.expense_count)===1?'expense':'expenses'}</p></section></div>`;
  }catch(error){target.className='empty';target.textContent='Report could not be loaded.';appMessage(error.message);}
+}
+function exportReportCsv(){
+ if(!lastReportData){appMessage('Run a report before exporting.');return;}
+ const {data,startDate,endDate}=lastReportData,rows=[
+  ['Havens Burger report','Value'],['From',startDate],['Through',endDate],['Orders recorded',data.orders.order_count],['Voided orders',data.orders.void_count],['Order value',data.orders.recorded_order_value],['Payments collected',data.payments.payments_collected],['Refunds issued',data.payments.refunds_issued],['Net collected',data.payments.net_collected],['Outstanding online orders',data.outstanding.unpaid_order_count],['Outstanding amount',data.outstanding.amount],['Expenses',data.expenses.total]
+ ];
+ const csv=rows.map(row=>row.map(value=>`"${String(value??'').replaceAll('"','""')}"`).join(',')).join('\n');
+ const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),link=document.createElement('a');
+ link.href=url;link.download=`havens-report-${startDate}-to-${endDate}.csv`;link.click();URL.revokeObjectURL(url);
+}
+async function renderCashClosing(){
+ const today=manilaDateString();
+ const {data,error}=await client.from('cashier_closings').select('business_date,expected_cash,actual_cash,difference,notes,created_at').order('business_date',{ascending:false}).limit(30);
+ if(error)dbError(error);
+ $('pageContent').innerHTML=`<div class="page-heading module-heading"><div><span class="inventory-item-label">END OF DAY</span><h2>Cash closing</h2><p>Compare recorded cash payments with the cash counted in the drawer.</p></div></div><section class="panel module-panel"><form id="cashClosingForm" class="form-grid"><div><label>Business date</label><input name="business_date" type="date" value="${today}" required></div><div><label>Actual cash counted (₱)</label><input name="actual_cash" type="number" min="0" step="0.01" required></div><div class="full"><label>Notes</label><input name="notes" maxlength="240" placeholder="Optional closing note"></div><div class="full"><button class="primary wide">Close cashier day</button></div></form></section><section class="panel module-panel"><div class="section-heading"><div><h2>Recent closings</h2><p>Latest 30 closing records.</p></div><span class="pill">${(data||[]).length} shown</span></div>${cashClosingTable(data||[])}</section>`;
+ $('cashClosingForm').addEventListener('submit',closeCashierDay);
+}
+function cashClosingTable(rows){
+ return rows.length?`<div class="table-wrap"><table><thead><tr><th>Date</th><th class="right">Expected</th><th class="right">Actual</th><th class="right">Difference</th><th>Notes</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${esc(row.business_date)}</td><td class="right">${peso(row.expected_cash)}</td><td class="right">${peso(row.actual_cash)}</td><td class="right ${Number(row.difference)<0?'stock-quantity-low':''}>${peso(row.difference)}</td><td>${esc(row.notes||'—')}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">No cashier closings recorded yet.</div>';
+}
+async function closeCashierDay(event){
+ event.preventDefault();const values=Object.fromEntries(new FormData(event.currentTarget));
+ try{
+  const {data,error}=await client.rpc('close_cashier_day',{p_business_date:values.business_date,p_actual_cash:Number(values.actual_cash),p_notes:values.notes.trim()||null});
+  if(error)dbError(error);appMessage(`Cash closing saved. Difference: ${peso(data.difference)}.`,false);await renderCashClosing();
+ }catch(error){appMessage('Could not close cashier day: '+error.message);}
+}
+async function renderAudit(){
+ const {data,error}=await client.from('audit_logs').select('id,actor_id,action,entity_type,entity_id,details,created_at').order('created_at',{ascending:false}).limit(100);
+ if(error)dbError(error);
+ $('pageContent').innerHTML=`<div class="page-heading module-heading"><div><span class="inventory-item-label">ACCOUNTABILITY</span><h2>Audit log</h2><p>Recent operational actions recorded for this branch.</p></div><span class="pill">${(data||[]).length} shown</span></div><section class="panel module-panel">${auditTable(data||[])}</section>`;
+}
+function auditTable(rows){
+ return rows.length?`<div class="table-wrap"><table><thead><tr><th>Time</th><th>Action</th><th>Entity</th><th>Details</th></tr></thead><tbody>${rows.map(row=>`<tr><td class="nowrap">${new Date(row.created_at).toLocaleString('en-PH',{timeZone:'Asia/Manila',dateStyle:'short',timeStyle:'short'})}</td><td><span class="pill">${esc(row.action)}</span></td><td>${esc(row.entity_type)}</td><td>${esc(JSON.stringify(row.details||{}))}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">No audit events recorded yet.</div>';
 }
 async function initialize(){
  const config=loadConfig();

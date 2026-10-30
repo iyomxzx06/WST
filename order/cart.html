@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Review your Havens Burger order."><title>Your cart · Havens Burger</title>
+  <link rel="icon" type="image/png" href="../restaurant-system/images/havens-burger-logo.png">
+  <link rel="stylesheet" href="./order.css">
+  <script src="../supabase-config.js"></script><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="flow-page">
+  <header class="store-header"><a class="store-brand" href="./" aria-label="Back to Havens Burger menu"><img class="brand-mark logo-mark" src="../restaurant-system/images/havens-burger-logo.png" alt=""><span><b>HAVENS BURGER</b><small>Main Branch</small></span></a><nav class="store-nav" aria-label="Store navigation"><a href="./">Menu</a><a href="./confirmation.html">Track order</a></nav><a class="staff-link" href="../restaurant-system/">Staff sign in ↗</a></header>
+  <main class="flow-main"><div class="stepper" aria-label="Order progress"><span class="active">1 <b>Your cart</b></span><i>→</i><span>2 <b>Checkout</b></span><i>→</i><span>3 <b>Confirmation</b></span></div>
+    <section class="flow-heading"><p class="eyebrow">REVIEW YOUR ORDER</p><h1>Your basket.</h1><p>Check your items before entering your details.</p></section>
+    <div id="cartMessage" class="store-message hidden" role="alert"></div>
+    <section class="flow-card cart-review-card"><div id="cartItems" class="flow-cart-items"><div class="flow-loading">Loading your basket…</div></div><div class="flow-summary"><div><span>Subtotal</span><b id="cartSubtotal">₱0.00</b></div><div class="flow-total"><span>Total</span><b id="cartTotal">₱0.00</b></div></div><div class="flow-actions"><a class="secondary" href="./">← Continue shopping</a><a id="checkoutButton" class="primary" href="./checkout.html">Continue to checkout →</a></div></section>
+  </main>
+  <footer class="store-footer"><span>© Havens Burger Station</span><span>Made with care. Served with a smile.</span><a href="../restaurant-system/">Staff sign in</a></footer>
+  <script type="module" src="./cart.js"></script>
+</body></html>

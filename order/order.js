@@ -8,6 +8,7 @@ const money = value => `₱${Number(value || 0).toLocaleString('en-PH', {
 })}`;
 const deliveryFee = 30;
 const attemptStorageKey = 'havens-online-checkout';
+const cartStorageKey = 'havens-online-cart';
 const cart = new Map();
 let supabase = null;
 let menuProducts = [];
@@ -15,8 +16,19 @@ let currentAttempt = null;
 let trackingToken = '';
 let trackingTimer = 0;
 let trackingBusy = false;
-let menuFilter = 'all';
+  let menuFilter = 'all';
+  let menuSearchTerm = '';
 let submittingOrder = false;
+let toastTimer = 0;
+
+function showToast(message) {
+  const toast = $('orderToast');
+  if (!toast) return;
+  toast.textContent = message;
+  toast.classList.add('show');
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => toast.classList.remove('show'), 2200);
+}
 
 function showMessage(message, isError = true) {
   const target = $('storeMessage');
@@ -32,6 +44,45 @@ function clearMessage() {
 
 function cartSubtotal() {
   return [...cart.values()].reduce((total, item) => total + Number(item.product.price) * item.quantity, 0);
+}
+
+function saveCart() {
+  try {
+    localStorage.setItem(cartStorageKey, JSON.stringify([...cart.values()].map(({ product, quantity }) => ({
+      productId: product.id,
+      quantity
+    }))));
+  } catch {
+    // Private browsing or blocked storage should not prevent ordering.
+  }
+}
+
+function restoreCart() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(cartStorageKey) || '[]');
+    if (!Array.isArray(saved)) return;
+    saved.forEach(item => {
+      const product = menuProducts.find(candidate => candidate.id === item.productId);
+      const quantity = Math.min(20, Math.max(0, Number(item.quantity) || 0));
+      if (product && isProductAvailable(product) && quantity) {
+        const existing = cart.get(product.id);
+        cart.set(product.id, { product, quantity: Math.min(20, (existing?.quantity || 0) + quantity) });
+      }
+    });
+    saveCart();
+  } catch {
+    try { localStorage.removeItem(cartStorageKey); } catch { /* Storage is unavailable. */ }
+  }
+}
+
+function isProductAvailable(product) {
+  return product?.is_available !== false && product?.available !== false && product?.active !== false;
+}
+
+function customerProductName(name) {
+  const match = String(name || '').match(/^B\d\s*-\s*(.+?)\s*-\s*(Single|B1T1)$/i);
+  if (!match) return String(name || 'Menu item');
+  return `${match[1]} · ${match[2].toUpperCase() === 'B1T1' ? 'B1T1 · 2 burgers' : 'Single'}`;
 }
 
 function fulfillmentType() {
@@ -66,7 +117,7 @@ function renderCart() {
   } else {
     $('cartItems').innerHTML = items.map(({ product, quantity }) => `
       <article class="cart-line">
-        <div class="cart-line-copy"><b>${escapeHtml(product.name)}</b><small>${money(product.price)} each</small></div>
+        <div class="cart-line-copy"><b>${escapeHtml(customerProductName(product.name))}</b><small>${money(product.price)} each</small></div>
         <div class="quantity-control">
           <button type="button" data-quantity="${escapeHtml(product.id)}" data-change="-1" aria-label="Remove one ${escapeHtml(product.name)}">−</button>
           <span aria-label="Quantity">${quantity}</span>
@@ -79,9 +130,11 @@ function renderCart() {
       if (!item) return;
       item.quantity += Number(button.dataset.change);
       if (item.quantity <= 0) cart.delete(button.dataset.quantity);
+      saveCart();
       renderCart();
     }));
   }
+  $('clearCart').classList.toggle('hidden', !items.length);
   updateTotals();
 }
 
@@ -91,6 +144,10 @@ function addToCart(productId) {
     showMessage('That menu item is no longer available. Refresh the menu and try again.');
     return;
   }
+  if (!isProductAvailable(product)) {
+    showMessage(`${product.name} is currently unavailable. Please choose another item.`);
+    return;
+  }
   const existing = cart.get(product.id);
   if (existing && existing.quantity >= 20) {
     showMessage('You can order up to 20 of each menu item.');
@@ -98,8 +155,10 @@ function addToCart(productId) {
   }
   if (existing) existing.quantity += 1;
   else cart.set(product.id, { product, quantity: 1 });
+  saveCart();
   clearMessage();
   renderCart();
+  showToast(`${product.name} added to your basket.`);
   document.querySelectorAll('[data-add]').forEach(addButton => {
     if (addButton.dataset.add !== product.id) return;
     const original = addButton.innerHTML;
@@ -128,12 +187,21 @@ function burgerName(number) {
   return { 1: 'Classic Burger', 2: 'Cheese Burger', 3: 'Deluxe Burger', 4: 'Double Cheese Burger' }[number];
 }
 
+function burgerDescription(number) {
+  return {
+    1: 'Grilled beef patty, fresh onion, and Havens sauce.',
+    2: 'Grilled beef patty, melted cheese, onion, and Havens sauce.',
+    3: 'Loaded with cheese, onion, tomato, lettuce, and Havens sauce.',
+    4: 'Two beef patties, double cheese, onion, and Havens sauce.'
+  }[number];
+}
+
 function renderBurgerCard(number, variants) {
   const productName = burgerName(number);
   const sizeButtons = variants.map(product => {
     const variant = burgerVariant(product).variant;
     return `<button type="button" class="burger-size-button" data-add="${escapeHtml(product.id)}">
-      <span>${variant === 'B1T1' ? 'B1T1' : 'Single'}</span><b>${money(product.price)}</b><i aria-hidden="true">＋</i>
+      <span>${variant === 'B1T1' ? 'B1T1 · 2 burgers' : 'Single'}</span><b>${money(product.price)}</b><i aria-hidden="true">＋</i>
     </button>`;
   }).join('');
   return `<article class="burger-card">
@@ -144,6 +212,7 @@ function renderBurgerCard(number, variants) {
       <span class="menu-card-kicker">HAVENS SIGNATURE</span>
       <h3>${escapeHtml(productName)}</h3>
       <p>Choose your size</p>
+      <details class="burger-details"><summary>What’s inside?</summary><span>${escapeHtml(burgerDescription(number))}</span></details>
       <div class="burger-sizes">${sizeButtons}</div>
     </div>
   </article>`;
@@ -151,8 +220,9 @@ function renderBurgerCard(number, variants) {
 
 function renderAddonCard(product, index) {
   const name = escapeHtml(product.name);
+  const icon = { bacon: '🥓', 'beef patty': '🍔', lettuce: '🥬', onion: '🧅', sauce: '🥫', 'slice cheese': '🧀', tomato: '🍅' }[product.name.toLowerCase()] || '＋';
   return `<article class="addon-card">
-    <div class="addon-art addon-art-${index % 4}" aria-hidden="true"><span>${escapeHtml(product.name.slice(0, 1).toUpperCase())}</span></div>
+    <div class="addon-art addon-art-${index % 4}" aria-hidden="true"><span>${icon}</span></div>
     <div class="addon-card-copy"><span class="menu-card-kicker">MAKE IT EXTRA</span><h3>${name}</h3><b>${money(product.price)}</b></div>
     <button class="addon-add-button" type="button" data-add="${escapeHtml(product.id)}" aria-label="Add ${name} to your order">＋</button>
   </article>`;
@@ -164,7 +234,7 @@ function wireAddButtons(container) {
 
 function renderFeatured() {
   const burgers = new Map();
-  menuProducts.forEach(product => {
+  menuProducts.filter(isProductAvailable).forEach(product => {
     const variant = burgerVariant(product);
     if (!variant) return;
     if (!burgers.has(variant.number)) burgers.set(variant.number, []);
@@ -195,7 +265,9 @@ function renderFeatured() {
 function renderMenu() {
   const burgers = new Map();
   const addons = [];
-  menuProducts.forEach(product => {
+  const visibleProducts = menuProducts.filter(product => isProductAvailable(product)
+    && (!menuSearchTerm || product.name.toLowerCase().includes(menuSearchTerm)));
+  visibleProducts.forEach(product => {
     const variant = burgerVariant(product);
     if (!variant) {
       addons.push(product);
@@ -239,8 +311,10 @@ async function loadMenu() {
   menuProducts = data.products.filter(product => product && typeof product.id === 'string'
     && typeof product.name === 'string' && Number.isFinite(Number(product.price)) && Number(product.price) >= 0);
   $('branchName').textContent = data.branch_name || data.business_name || 'Freshly made, just for you';
+  restoreCart();
   renderFeatured();
   renderMenu();
+  renderCart();
 }
 
 function updateFulfillmentFields() {
@@ -293,12 +367,24 @@ async function submitOrder(event) {
   if (!form.reportValidity()) return;
   const fields = new FormData(form);
   const fulfillment = String(fields.get('fulfillment_type'));
+  const phone = String(fields.get('customer_phone') || '').trim().replace(/[\s()-]/g, '');
+  if (!/^(09\d{9}|\+639\d{9})$/.test(phone)) {
+    showMessage('Enter a valid Philippine mobile number, e.g. 09171234567.');
+    $('customerPhone').focus();
+    return;
+  }
+  const address = String(fields.get('delivery_address') || '').trim();
+  if (fulfillment === 'delivery' && address.length < 10) {
+    showMessage('Please enter a complete delivery address with at least 10 characters.');
+    $('deliveryAddress').focus();
+    return;
+  }
   const payload = {
     items: [...cart.values()].map(({ product, quantity }) => ({ product_id: product.id, quantity })),
     customer_name: String(fields.get('customer_name')).trim(),
-    customer_phone: String(fields.get('customer_phone')).trim(),
+    customer_phone: phone,
     fulfillment_type: fulfillment,
-    delivery_address: fulfillment === 'delivery' ? String(fields.get('delivery_address')).trim() : '',
+    delivery_address: fulfillment === 'delivery' ? address : '',
     delivery_landmark: fulfillment === 'delivery' ? String(fields.get('delivery_landmark')).trim() : '',
     payment_method: String(fields.get('payment_method')),
     notes: String(fields.get('notes')).trim()
@@ -326,6 +412,7 @@ async function submitOrder(event) {
     if (!data?.reference || data.tracking_token !== attempt.token) throw new Error('The order was received, but its tracking link could not be verified. Please contact the restaurant before submitting again.');
     clearCheckoutAttempt();
     cart.clear();
+    saveCart();
     const nextUrl = new URL(window.location.href);
     nextUrl.hash = `track=${attempt.token}`;
     window.history.replaceState(null, '', nextUrl);
@@ -469,6 +556,16 @@ async function initialize() {
       });
       renderMenu();
     }));
+    $('menuSearch').addEventListener('input', event => {
+      menuSearchTerm = event.currentTarget.value.trim().toLowerCase();
+      renderMenu();
+    });
+    $('clearCart').addEventListener('click', () => {
+      if (!cart.size || !window.confirm('Clear all items from your basket?')) return;
+      cart.clear();
+      saveCart();
+      renderCart();
+    });
     $('refreshTracking').addEventListener('click', refreshTracking);
     $('copyTrackingLink').addEventListener('click', copyTrackingLink);
     renderCart();
