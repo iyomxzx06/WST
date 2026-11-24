@@ -449,6 +449,7 @@ async function loadTracking(token, knownReference = '') {
   $('confirmationScreen').classList.remove('hidden');
   $('confirmationScreen').focus();
   if (knownReference) $('confirmationReference').textContent = knownReference;
+  $('confirmationTrackingCode').textContent = token;
   $('trackingDetails').innerHTML = '<span class="loading-spinner" aria-label="Loading order status"></span>';
   await refreshTracking();
   trackingTimer = window.setInterval(() => {
@@ -493,6 +494,16 @@ async function copyTrackingLink() {
     window.setTimeout(() => { $('copyTrackingLink').textContent = 'Copy tracking link'; }, 2200);
   } catch {
     showMessage('Could not copy automatically. Copy the address from your browser to save your tracking link.');
+  }
+}
+
+async function copyTrackingCode() {
+  try {
+    await navigator.clipboard.writeText(trackingToken);
+    $('copyTrackingCode').textContent = 'Code copied';
+    window.setTimeout(() => { $('copyTrackingCode').textContent = 'Copy code'; }, 2200);
+  } catch {
+    showMessage('Could not copy automatically. Select and copy the tracking code manually.');
   }
 }
 
@@ -568,6 +579,7 @@ async function initialize() {
     });
     $('refreshTracking').addEventListener('click', refreshTracking);
     $('copyTrackingLink').addEventListener('click', copyTrackingLink);
+    $('copyTrackingCode').addEventListener('click', copyTrackingCode);
     renderCart();
     updateFulfillmentFields();
     document.querySelectorAll('.store-nav a').forEach(link => link.addEventListener('click', () => {

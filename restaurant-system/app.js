@@ -367,7 +367,7 @@ function burgerLabel(number){
  return {1:'Classic Burger',2:'Cheese Burger',3:'Deluxe Burger',4:'Double Cheese Burger'}[number];
 }
 async function renderOnlineOrders(){
- const columns='id,public_reference,customer_name,customer_phone,fulfillment_type,delivery_address,delivery_landmark,delivery_fee,payment_method,subtotal,total,notes,status,sales_order_id,created_at,online_order_items(id,product_name,quantity,unit_price)';
+ const columns='id,public_reference,customer_name,customer_phone,fulfillment_type,delivery_address,delivery_landmark,delivery_latitude,delivery_longitude,delivery_fee,payment_method,subtotal,total,notes,status,sales_order_id,created_at,online_order_items(id,product_name,quantity,unit_price)';
  const [pendingResult,recentResult]=await Promise.all([
   client.from('online_orders').select(columns).eq('status','pending').order('created_at',{ascending:true}),
   client.from('online_orders').select(columns).neq('status','pending').order('created_at',{ascending:false}).limit(20)
@@ -424,7 +424,7 @@ function onlineOrderCard(order,payment,refunded=0){
   <div class="online-order-customer"><b>${esc(order.customer_name)}</b><a href="tel:${esc(order.customer_phone)}">${esc(order.customer_phone)}</a></div>
   <div class="online-order-tags"><span class="pill blue">${order.fulfillment_type==='delivery'?'Delivery':'Pickup'}</span><span class="pill">${paymentLabel}</span></div>
   <ul class="online-order-items">${(order.online_order_items||[]).map(item=>`<li><span><b>${Number(item.quantity)}×</b> ${esc(item.product_name)}</span><b>${peso(Number(item.quantity)*Number(item.unit_price))}</b></li>`).join('')}</ul>
-  ${order.fulfillment_type==='delivery'?`<div class="online-order-address"><b>Delivery address</b><span>${esc(order.delivery_address)}</span>${order.delivery_landmark?`<small>Landmark: ${esc(order.delivery_landmark)}</small>`:''}</div>`:''}
+  ${order.fulfillment_type==='delivery'?`<div class="online-order-address"><b>Delivery address</b><span>${esc(order.delivery_address)}</span>${order.delivery_landmark?`<small>Landmark: ${esc(order.delivery_landmark)}</small>`:''}${Number.isFinite(Number(order.delivery_latitude))&&Number.isFinite(Number(order.delivery_longitude))?`<a href="https://www.google.com/maps?q=${encodeURIComponent(`${order.delivery_latitude},${order.delivery_longitude}`)}" target="_blank" rel="noopener">Open customer location ↗</a>`:`<small>GPS location not shared</small>`}</div>`:''}
   ${order.notes?`<div class="ticket-note"><b>Customer note:</b> ${esc(order.notes)}</div>`:''}
   <div class="online-order-total"><span>${order.delivery_fee?`Subtotal ${peso(order.subtotal)} + delivery ${peso(order.delivery_fee)}`:'Order total'}</span><b>${peso(order.total)}</b></div>
   ${isPending?`<div class="online-order-actions"><button class="primary" type="button" data-accept-online="${esc(order.id)}">Accept & send to kitchen</button><button class="secondary" type="button" data-reject-online="${esc(order.id)}">Decline</button></div>`:''}

@@ -322,6 +322,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .confirmation-icon { display: grid; width: 54px; height: 54px; margin: 0 auto 15px; place-items: center; border-radius: 17px; background: #e9f6ef; color: var(--green); font-size: 24px; font-weight: 850; }
 .confirmation-icon-alert { background: #fff0e9; color: var(--orange-deep); }
 .confirmation-card h1 { margin: 3px 0 7px; font-size: clamp(26px, 5vw, 36px); letter-spacing: -.05em; }
+.tracking-code { display: grid; gap: 7px; margin: 12px auto 18px; padding: 12px; border: 1px dashed var(--line); border-radius: 12px; background: #fffaf5; }
+.tracking-code small { color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: .12em; }
+.tracking-code code { overflow-wrap: anywhere; color: var(--ink); font-size: 11px; letter-spacing: .04em; }
+.tracking-code .text-button { justify-self: center; }
 .confirmation-message { margin: 0 auto 18px; max-width: 410px; color: var(--muted); font-size: 12px; }
 .tracking-reference { display: grid; gap: 4px; padding: 15px; border: 1px dashed #decbbd; border-radius: 12px; background: #fffaf5; }
 .tracking-reference small { color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: .13em; }
