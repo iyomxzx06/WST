@@ -672,6 +672,9 @@ async function renderInventory(){
  const {data:movementRows,error:movementError}=await client.from('inventory_movements')
   .select('id,ingredient_id,quantity_change,movement_type,note,created_at').order('created_at',{ascending:false}).limit(30);
  if(movementError)dbError(movementError);
+ const {data:productRows,error:productError}=await client.from('products')
+  .select('id,name,price,active,track_inventory').eq('branch_id',profile.branch_id).order('name');
+ if(productError)dbError(productError);
  const {data:catalogImport,error:catalogImportError}=await client.from('catalog_file_imports')
   .select('products_imported,products_skipped,imported_at').eq('branch_id',profile.branch_id).maybeSingle();
  if(catalogImportError)dbError(catalogImportError);
@@ -697,6 +700,7 @@ async function renderInventory(){
   ${canManageInventory&&missingStockLabels(ingredients).length?`<section class="notice inventory-missing-note">Some standard inventory labels are missing: ${missingStockLabels(ingredients).map(esc).join(', ')}. Run the corrected migrations/004_inventory_stock_rules.sql in Supabase first, then refresh.</section>`:''}
   ${canManageInventory&&!catalogImport?`<section class="panel"><h2>Default menu</h2><p class="muted">The default catalog adds B1 Classic, B2 Cheese, B3 Deluxe, and B4 Double Cheese, each with Single and B1T1 options, plus the seven extras from hb.html. It skips existing same-name products and never changes current stock.</p></section>`:''}
   <section class="panel"><div class="section-heading"><div><h2>${canManageInventory?'Opening / current stock':'Current stock'}</h2><p>Search by ingredient name to find a stock item quickly.</p></div></div><label for="inventorySearch">Search inventory</label><input id="inventorySearch" type="search" placeholder="Buns, patties, cheese…" autocomplete="off">${canManageInventory?`<form id="stockCountForm"><div class="table-wrap">${ingredientTable(ingredients)}</div><button id="saveAllStockCounts" class="primary wide" type="submit">Save all counts</button></form>`:`<div class="table-wrap">${ingredientTable(ingredients,true)}</div>`}</section>
+  ${canManageInventory?`<section class="panel"><div class="section-heading"><div><h2>POS products</h2><p>Delete a product to hide it from customer ordering and the POS. Existing order history is preserved.</p></div><span class="pill">${(productRows||[]).filter(row=>row.active).length} active</span></div><div class="table-wrap">${productTable(productRows||[])}</div></section>`:''}
   <section class="panel"><div class="section-heading"><div><h2>Recent stock movements</h2><p>The latest 30 stock changes for this branch.</p></div><span class="pill">${(movementRows||[]).length} shown</span></div>${inventoryMovementTable(movementRows||[],ingredients)}</section>
   ${canManageInventory?`<section class="panel"><h2>Record wastage</h2><p class="muted">Use this for spoiled, damaged, or discarded stock.</p><form id="wasteForm" class="form-grid"><div><label>Ingredient</label><select name="ingredient_id" required>${ingredientOptions(ingredients)}</select></div><div><label>Quantity</label><input name="quantity" type="number" min="0.001" step="0.001" required></div><div class="full"><label>Reason</label><input name="note" maxlength="240" placeholder="Spoiled, damaged, or discarded" required></div><div class="full"><button class="secondary wide">Record wastage</button></div></form></section><section class="panel"><h2>Add POS product</h2><form id="productForm" class="form-grid"><div><label>Product name</label><input name="name" maxlength="120" required></div><div><label>Price (₱)</label><input name="price" type="number" min="0" step="0.01" required></div><div class="full"><button class="primary wide">Add product</button></div></form></section>
   <details class="panel inventory-custom-ingredient"><summary>Add another ingredient</summary><form id="ingredientForm" class="form-grid"><div><label>Ingredient name</label><input name="name" maxlength="120" required></div><div><label>Stock unit</label><input name="unit" maxlength="24" required></div><div><label>Opening stock</label><input name="starting_stock" type="number" min="0" step="0.001" value="0" required></div><div><label>Alert me when at</label><input name="reorder_level" type="number" min="0" step="0.001" value="0" required></div><div class="full"><label>Cost per unit (₱)</label><input name="unit_cost" type="number" min="0" step="0.0001" value="0"></div><div class="full"><button class="primary wide">Add ingredient</button></div></form></details>`:''}`;
@@ -704,12 +708,27 @@ async function renderInventory(){
   $('ingredientForm').addEventListener('submit',createIngredient);
   $('productForm').addEventListener('submit',createProduct);
    $('wasteForm').addEventListener('submit',recordWaste);
+  $('pageContent').querySelectorAll('[data-delete-product]').forEach(button=>button.addEventListener('click',()=>deleteProduct(button)));
   if(!catalogImport)$('importHbCatalog').addEventListener('click',importHbCatalog);
   $('stockCountForm').addEventListener('submit',saveStockCounts);
  }
   const inventoryFilter=document.createElement('select');inventoryFilter.id='inventoryStatusFilter';inventoryFilter.setAttribute('aria-label','Filter inventory status');inventoryFilter.innerHTML='<option value="all">All stock</option><option value="low">Low stock</option><option value="in">In stock</option><option value="out">Out of stock</option>';$('inventorySearch').after(inventoryFilter);
   const filterInventory=()=>{const query=$('inventorySearch').value.trim().toLowerCase(),status=inventoryFilter.value;Array.from($('pageContent').querySelectorAll('.inventory-item')).forEach((item,index)=>{const row=ingredients[index],stock=Number(row?.stock_quantity||0),reorder=Number(row?.reorder_level||0),matchesStatus=status==='all'||(status==='low'&&stock<=reorder)||(status==='in'&&stock>reorder)||(status==='out'&&stock===0);item.hidden=(!matchesStatus)||(query&&!item.textContent.toLowerCase().includes(query));});};
   $('inventorySearch').addEventListener('input',filterInventory);inventoryFilter.addEventListener('change',filterInventory);
+}
+function productTable(rows){
+ if(!rows.length)return '<div class="empty">No POS products found.</div>';
+ return `<table><thead><tr><th>Product</th><th>Price</th><th>Status</th><th>Action</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${esc(row.name)}</td><td>${peso(row.price)}</td><td><span class="pill ${row.active?'green':'red'}">${row.active?'Active':'Deleted'}</span></td><td>${row.active?`<button class="secondary actions-button" type="button" data-delete-product="${esc(row.id)}" data-product-name="${esc(row.name)}">Delete</button>`:'—'}</td></tr>`).join('')}</tbody></table>`;
+}
+async function deleteProduct(button){
+ const name=button.dataset.productName||'this product';
+ if(!window.confirm(`Delete ${name}? It will be hidden from the POS and online menu. Existing orders will be preserved.`))return;
+ button.disabled=true;
+ try{
+  const {error}=await client.from('products').update({active:false}).eq('id',button.dataset.deleteProduct).eq('branch_id',profile.branch_id);
+  if(error)dbError(error);
+  appMessage('Product deleted from active menus.',false);await renderInventory();
+ }catch(error){appMessage('Could not delete product: '+error.message);button.disabled=false;}
 }
 async function importHbCatalog(){
  const accepted=window.confirm('Add the default menu and inventory stock rules? Existing same-name products will be skipped. Existing opening stock will not change; new inventory items start at 0. Sales history is not imported.');
